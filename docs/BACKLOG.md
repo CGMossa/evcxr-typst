@@ -218,7 +218,7 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ### T-H01 · License files
 
-- **Status:** open
+- **Status:** done · LICENSE-MIT, LICENSE-APACHE at repo root, README.md updated.
 - **Phase:** any
 - **Depends on:** —
 - **Briefing:** Add `LICENSE-MIT` and `LICENSE-APACHE` matching evcxr's text. Reference them in `Cargo.toml` (`license = "MIT OR Apache-2.0"`) and in source-file headers when we start adding code.
@@ -230,6 +230,14 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 - **Phase:** any
 - **Depends on:** T-I01
 - **Briefing:** Mirror evcxr's `rustfmt.toml` so we stay style-aligned with upstream.
+
+### T-H03 · Rename `show:` kwarg in package API (Typst reserved word)
+
+- **Status:** open
+- **Phase:** any
+- **Depends on:** —
+- **Briefing:** `packages/evcxr/lib.typ` currently declares `#let rust(src, id: none, deps: (), show: auto, ...)`. Typst rejects this with "keyword `show` is not allowed as an identifier" — `show` is reserved (the rule selector). Discovered while smoke-testing `typst compile --root . examples/hello/main.typ` during T-H01/T-H04 cleanup. Need to (1) pick a non-reserved name, candidates: `display`, `output`, `mode`, `show_` (Typst's own suggestion); (2) update D-012 in `docs/DECISIONS.md` and `docs/design/package-api.md` to record the rename; (3) update `examples/hello/main.typ` and the `setup(default-show: ...)` kwarg accordingly (likely also reserved-adjacent but currently parses). Not blocking on the CLI side but blocks any actual `typst compile` of the hello example.
+- **Done when:** `typst compile --root . examples/hello/main.typ` parses past the `lib.typ` import; design docs updated; decision recorded.
 
 ---
 

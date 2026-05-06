@@ -6,23 +6,31 @@ Integration glue between [evcxr](https://github.com/evcxr/evcxr) (a Rust evaluat
 
 ## Status
 
-Pre-implementation. This repo currently contains plans only. See [`docs/BACKLOG.md`](docs/BACKLOG.md) for the next actionable task.
+Phase 0 design is complete (architecture, decisions, snippet semantics, error model, cache, watch-loop, multi-file projects, schema versioning — see [`docs/design/`](docs/design/)). Phase 1 scaffolding has shipped: a Rust CLI skeleton (`crates/evcxr-typst/`), a Typst package skeleton (`packages/evcxr/`), and a hello-world example. The next actionable task is **T-I03** — wiring the end-to-end smoke test that connects the CLI to the package via sidecar files. See [`docs/BACKLOG.md`](docs/BACKLOG.md).
 
-## Repository layout (planned)
+## Quick start
+
+```sh
+cargo build -p evcxr-typst
+cargo run -p evcxr-typst -- --help    # prints "scaffolding only" and exits 2
+```
+
+## Repository layout
 
 ```
 evcxr-typst/
-├── docs/                    # plans, architecture, decisions, backlog ← here today
+├── docs/                    # plans, architecture, decisions, backlog
 ├── crates/
-│   └── evcxr-typst/         # Rust CLI (Phase 1)
+│   └── evcxr-typst/         # Rust CLI (Phase 1 scaffolding)
 ├── packages/
-│   └── evcxr/               # Typst package (Phase 1)
-└── examples/                # end-to-end sample documents (Phase 1+)
+│   └── evcxr/               # Typst package (Phase 1 scaffolding)
+└── examples/
+    └── hello/               # end-to-end smoke document
 ```
 
 ## How this repo relates to evcxr
 
-The [evcxr](https://github.com/evcxr/evcxr) source is treated as a **read-only reference workspace**. Locally it lives at `/Users/elea/Documents/GitHub/evcxr`. We depend on its `evcxr` crate via path / git / crates.io — we do **not** vendor or fork it. Patches that need to land in evcxr proper are sent upstream.
+The [evcxr](https://github.com/evcxr/evcxr) source is treated as a **read-only reference workspace**. We depend on its `evcxr` crate via path-dep during development (per [D-006](docs/DECISIONS.md)) and will switch to crates.io for releases. We do **not** vendor or fork it. Patches that need to land in evcxr proper are sent upstream.
 
 Future Claude Code sessions: see [`CLAUDE.md`](CLAUDE.md).
 
@@ -35,4 +43,9 @@ Future Claude Code sessions: see [`CLAUDE.md`](CLAUDE.md).
 
 ## License
 
-Will be dual MIT / Apache-2.0, matching evcxr. License files not yet added — see backlog.
+Dual-licensed under either of:
+
+- Apache License, Version 2.0 ([`LICENSE-APACHE`](LICENSE-APACHE))
+- MIT License ([`LICENSE-MIT`](LICENSE-MIT))
+
+at your option.
