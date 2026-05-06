@@ -311,6 +311,69 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ---
 
+### T-B00 · Rust-by-example port — track meta-doc
+
+- **Status:** done · D-022 · `docs/tracks/rust-by-example-port.md`
+- **Track:** Rust-by-example port
+- **Depends on:** —
+- **Resolution:** Track designed end-to-end: vision, mapping rules (md → typ, code-block tag → evcxr function), `fn main()` problem and `rust-main` resolution, deterministic porter design (`tools/rbe-port/`, `pulldown-cmark` + `syn`), license/attribution policy, B1..B6 phasing, drift detection via manifest, and 5 explicit open questions. D-022 records the policy.
+
+### T-B01 · `tools/rbe-port/` skeleton + `rust-main` package addition
+
+- **Status:** open
+- **Track:** Rust-by-example port
+- **Depends on:** main-plan **T-I02** shipped (the `evcxr` package must exist to extend it with `rust-main`)
+- **Reference reads:**
+  - `docs/tracks/rust-by-example-port.md` (full track plan, especially § "Mapping" and § "Tooling")
+  - `docs/DECISIONS.md` D-022 (the track decision), D-019 (schema versioning — `auto-call` is additive)
+  - `docs/design/package-api.md` (the function set `rust-main` joins)
+  - `.rust-by-example/src/hello.md` and `custom_types/structs.md` (the canonical inputs)
+- **Briefing:** Two pieces in one task:
+  1. **`tools/rbe-port/`**: new workspace member, Rust binary. clap CLI: `rbe-port <input-dir> <output-dir> [--phase B1|B2|…]`. Markdown parser via `pulldown-cmark`; Rust snippet detection via `syn` (specifically: detect `fn main() { … }` to know whether to emit `rust-main` vs `rust`); `summary.rs` parses upstream `SUMMARY.md` into a tree. Output: per-chapter `.typ` files mirroring the input directory structure, plus `manifest.json` capturing input commit SHA and per-file SHA-256. Determinism: same input bytes → byte-identical output. Golden tests under `tools/rbe-port/tests/golden/` for at least three inputs covering plain `rust`, `rust,editable`, and `rust,ignore`.
+  2. **`rust-main` package addition**: extend `packages/evcxr/lib.typ` with `rust-main(src, ..)` mirroring `rust(...)`'s kwargs. Metadata emitted is `kind: "rust-main"` (a new `kind` variant — additive per D-019, no `v` bump) with `options.auto-call: "main"`. The CLI side (T-I03 onward) will know to evaluate the snippet and then synthesise a `main();` invocation; a stub of that contract goes into `docs/design/package-api.md` § 2 as the new `2.9` subsection.
+- **Done when:** `tools/rbe-port/` builds clean and converts `.rust-by-example/src/hello.md` to a `.typ` file that uses `rust-main` and renders correctly under `typst compile --root . examples/rust-by-example/hello.typ`. Golden tests pass. `lib.typ` exports `rust-main`. `package-api.md` § 2.9 added.
+
+### T-B02 · Phase B1 — port Hello / Primitives / Custom Types (~15 chapters)
+
+- **Status:** blocked
+- **Track:** Rust-by-example port
+- **Depends on:** T-B01 shipped · main-plan **T-I03** shipped (so we can actually run-and-render to validate end-to-end)
+- **Briefing:** Run `rbe-port --phase B1` against `.rust-by-example/`. Hand-review every output file once. Where the porter mis-translates, fix the porter (not the output) and re-run; the output is meant to be regenerable. Add `examples/rust-by-example/NOTICES.md` per D-022. Add the top-level `examples/rust-by-example/main.typ` `#include`-ing the chapter files in `SUMMARY.md` order. Verify each chapter renders under `evcxr-typst run --allow-eval` and the captured stdout matches the upstream's expected output (rust-by-example chapters have a known-good expected output for each example).
+- **Done when:** all 15 B1 chapters render evaluated; `main.typ` builds top to bottom; `NOTICES.md` carries the upstream commit SHA; the regenerate-from-porter cycle is clean.
+
+### T-B03 · Phase B2 — variable_bindings / types / conversion / expression / flow_control (~30 chapters)
+
+- **Status:** blocked
+- **Track:** Rust-by-example port
+- **Depends on:** T-B02
+- **Briefing:** Same shape as T-B02, larger. Validates `let`/scope/shadowing edge cases against snippet-semantics § "Variable-reference limitation" — expect at least one chapter to expose a workaround we need to document.
+- **Done when:** B2 chapters render; any variable-reference workarounds documented in a per-chapter footnote.
+
+### T-B04 · Phase B3 — fn / mod / crates / cargo (~15 chapters)
+
+- **Status:** blocked
+- **Track:** Rust-by-example port
+- **Depends on:** T-B03
+- **Briefing:** The modules chapter is the cross-snippet acid test (D-008: file-based `mod foo;` rejected — but rust-by-example uses inline `mod` consistently, so this should compose cleanly). The `crates/cargo` chapters demonstrate `:dep` integration; expect this to surface any `dep()` ergonomics issues.
+- **Done when:** B3 chapters render; cross-snippet item composition holds across chapter boundaries.
+
+### T-B05 · Phase B4 — attribute / generics / scope / trait (~25 chapters)
+
+- **Status:** blocked
+- **Track:** Rust-by-example port
+- **Depends on:** T-B04
+- **Briefing:** Generic and trait composition. Lifetime restrictions in the scope chapter will exercise persistence rules; document any chapter that needs the `Box::leak`-style workaround from snippet-semantics.
+
+### T-B06 · Phase B5 + B6 — error + std/std_misc/testing/unsafe/compatibility/meta (~55 chapters)
+
+- **Status:** blocked
+- **Track:** Rust-by-example port
+- **Depends on:** T-B05 · main-plan **T-I04** (MIME passthrough — the formatting chapter wants `Display` output; std chapters may want images) · main-plan **T-I07** (pretty errors — the error chapter is built around demonstrating compile failures gracefully)
+- **Briefing:** Largest chunk; split into B5 and B6 sub-PRs if convenient. Tests T-I07 against the `compile_fail` snippets in `error/*` (the document must keep rendering past a failed snippet). Tests `:dep` cache absorption in `std/*` (the cache should make repeat `evcxr-typst run` cheap).
+- **Done when:** B5 + B6 chapters render; full `examples/rust-by-example/main.typ` book builds end to end; any timeouts logged for follow-up.
+
+---
+
 ## Done
 
 (Tasks above marked `done` retain their full briefing for posterity. Future "done" entries should keep the same shape: status line cites commit + output paths + any decision-record updates.)
