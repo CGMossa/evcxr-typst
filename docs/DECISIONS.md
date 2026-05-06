@@ -310,3 +310,21 @@ The cache directory sits at the workspace level (alongside the `.typ` source), g
 **Consequences:** The semantic-typst track is now formally a side track (`docs/tracks/semantic-typst.md`), with tasks T-S01..T-S04 in the side-tracks section of `BACKLOG.md`. T-D11 in the main backlog is rewritten to point at S4 specifically. The `<id>.semantic.cbor` sidecar is added as the fifth versioned interface in `docs/design/schema-versioning.md` when S1 ships.
 
 **Reference:** `docs/tracks/semantic-typst.md`; `docs/design/wasm-plugin-analyzer.md`; D-015 (sidecar fallback model precedent); D-019 (schema versioning policy).
+
+---
+
+## D-021 — Rename `show:` kwarg to `render:` (amends D-012; Typst reserves `show`)
+
+**Status:** accepted · 2026-05-06
+
+**Decision:**
+- The kwarg controlling what `rust(...)` displays in the rendered document is renamed `show:` → `render:`. Values unchanged: `auto` / `"source"` / `"output"` / `"both"`.
+- The corresponding `setup()` document-wide default is renamed `default-show:` → `default-render:` for consistency (the standalone `default-show` identifier was not actually reserved, but mirroring the per-call kwarg name keeps the API memorable).
+- The metadata-schema field at `<evcxr-snippet>.options.show` is renamed to `<evcxr-snippet>.options.render` to mirror the kwarg name.
+- The `dep(..., show: ...)` kwarg (per package-api.md § 3, controlling whether a `dep` call renders a "depends on:" tag) is renamed `show:` → `render:` for the same reason. Boolean values unchanged.
+
+**Rationale:** Typst rejects `show` as a function-parameter identifier — it's a reserved keyword (the `show` rule selector). Discovered while smoke-testing `typst compile examples/hello/main.typ` during T-H01 cleanup (T-H03 finding). Candidates considered: `display` (clashes with the `rust-display()` function name — same word, different scope, predicted to confuse readers), `output` (overlaps with the kwarg's *value* `"output"`), `mode` (too generic — doesn't say what's being moded), `show_` (Typst's mechanical workaround — ugly trailing underscore, not idiomatic), `view` (reads weirdly as `view: "both"`), `parts` (close, but doesn't say *what is rendered*). `render:` won: describes the action precisely, no Typst-keyword collision, no overlap with any package function name, parses naturally with every value (`render: "both"`, `render: "source"`, `render: auto`).
+
+**Consequences:** `packages/evcxr/lib.typ` updated. `docs/design/package-api.md` updated wholesale (every `show:` references this kwarg, except where it already uses `default-show:` in setup which is also renamed). D-012's title and decision text reference `show: "both"`; left in place per the append-only DECISIONS convention — this entry is the amendment of record. The metadata-schema rename does not require a `<evcxr-snippet>.v` bump per D-019 (the schema isn't shipped; we're amending pre-1.0). Future schema bumps governed by D-019 normally.
+
+**Reference:** D-012 (the original names decision); T-H03 in `BACKLOG.md` (the bug report); `packages/evcxr/lib.typ`.

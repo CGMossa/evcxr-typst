@@ -9,7 +9,7 @@ API summary used throughout the gallery:
 
 | Function | Purpose |
 |---|---|
-| `rust(code)` | Show the code AND its captured stdout (default `show: "both"`). |
+| `rust(code)` | Show the code AND its captured stdout (default `render: "both"`). |
 | `rust-out(code)` | Show only the captured stdout (hide the source). |
 | `rust-display(code)` | Show only the display object (image / HTML / etc), with `prefer:` to pick among multiple artifacts. |
 | `rust-hidden(code)` | Evaluate but render nothing. Setup / definition / fixture snippets. |
@@ -55,8 +55,8 @@ The names used throughout the gallery are now the final v0 API. Recap:
   (`dep("serde = \"1.0\"")`).
 - Hyphens, not underscores, throughout — matches Typst stdlib idiom
   (`raw-block`, `outline-entry`).
-- Default `show:` for `rust(...)` is `"both"` (source + output);
-  configurable via `setup(default-show: ...)`.
+- Default `render:` for `rust(...)` is `"both"` (source + output);
+  configurable via `setup(default-render: ...)`.
 - `dep(...)` calls remain inline-anywhere (D-013); the CLI
   pre-collects them in document order and errors on conflicting
   versions per snippet-semantics G5.
