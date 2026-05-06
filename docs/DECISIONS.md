@@ -328,3 +328,24 @@ The cache directory sits at the workspace level (alongside the `.typ` source), g
 **Consequences:** `packages/evcxr/lib.typ` updated. `docs/design/package-api.md` updated wholesale (every `show:` references this kwarg, except where it already uses `default-show:` in setup which is also renamed). D-012's title and decision text reference `show: "both"`; left in place per the append-only DECISIONS convention — this entry is the amendment of record. The metadata-schema rename does not require a `<evcxr-snippet>.v` bump per D-019 (the schema isn't shipped; we're amending pre-1.0). Future schema bumps governed by D-019 normally.
 
 **Reference:** D-012 (the original names decision); T-H03 in `BACKLOG.md` (the bug report); `packages/evcxr/lib.typ`.
+
+---
+
+## D-022 — Rust-by-example port lives in `examples/rust-by-example/` as a phased side track; `rust-main` package convenience added
+
+**Status:** accepted · 2026-05-06
+
+**Decision:**
+- The rust-by-example port is a side track per `docs/tracks/README.md` policy: off main critical path, never blocks Phase 1–4. Designed in `docs/tracks/rust-by-example-port.md`.
+- Output lives at `examples/rust-by-example/<chapter-path>.typ` mirroring upstream `SUMMARY.md` structure. A top-level `examples/rust-by-example/main.typ` `#include`s the per-chapter files in SUMMARY order. Multi-file project model per D-018 applies: one entry file, single workspace cache.
+- A new package convenience `evcxr.rust-main(snippet, ..)` is introduced. It accepts a snippet whose source contains a `fn main() { … }` definition; the CLI defines everything in the snippet *and* synthesises a trailing `main();` invocation (recorded in `<evcxr-snippet>.options.auto-call = "main"`, not shown in the rendered source). The rendered Typst source is the unmodified rust-by-example snippet — faithful to upstream — and the captured stdout below it is the result of `main()` being called. Adding `auto-call` to `options` is additive per D-019; no schema-version bump.
+- Conversion is performed by a workspace tool `tools/rbe-port/` (Rust binary using `pulldown-cmark` + `syn`). Deterministic: same input bytes → same output bytes. Drift detection via a `manifest.json` capturing the input commit SHA and per-file SHA-256.
+- The `.rust-by-example/` source-mdBook checkout is not vendored into the repo. Stays gitignored. The porter reads from a configurable input path. Rejected alternatives: `git submodule` (transitive complexity), in-tree vendor (bloat + merge mess on upstream updates).
+- License/attribution: rust-by-example is dual MIT/Apache-2.0, same as evcxr-typst; licenses are compatible. Required: `examples/rust-by-example/NOTICES.md` documents upstream license, repo, and the commit SHA the port is based on; each per-chapter `.typ` carries an auto-generated `// Adapted from rust-by-example/<src>.md` header; the top-level `main.typ` includes a banner pointing at `NOTICES.md`.
+- Phasing: B0 (tooling + license scaffolding) → B1 (Hello / Primitives / Custom Types, ~15 chapters) → B2 (variable_bindings / types / conversion / expression / flow_control, ~30) → B3 (fn / mod / crates / cargo, ~15) → B4 (attribute / generics / scope / trait, ~25) → B5 (error, ~15) → B6 (std / std_misc / testing / unsafe / compatibility / meta, ~40). v0 deliverable = B0 + B1 + B2.
+
+**Rationale:** Rust-by-example is the canonical "varied, idiomatic Rust prose-and-code" corpus. Successfully porting it validates the integration end-to-end against material we did not author — a much stronger demonstration than the eight-doc gallery in `docs/design/examples/`. The deterministic script-based porter (rather than hand-conversion) keeps the work tractable across 198 files and gives us a clean re-port story when upstream changes. `rust-main` is the smallest package change that lets us stay faithful to upstream's ubiquitous `fn main() { … }` framing without splitting every chapter into define-and-call snippets. The not-vendored, not-submoduled stance keeps repo hygiene clean while still being reproducible (manifest captures the SHA).
+
+**Consequences:** New side-track tasks T-B00..T-B06 in `docs/BACKLOG.md`. New `tools/rbe-port/` workspace member. New `examples/rust-by-example/` output tree (gitignored or partially committed; phase choice). New `examples/rust-by-example/NOTICES.md` once B0 ships. Package gains `rust-main` once B0's spec lands; minor `lib.typ` addition. Schema's `options.auto-call` field added (additive). The `:cache` budget recommendation may need bumping to absorb the dep-heavy chapters in B6.
+
+**Reference:** `docs/tracks/rust-by-example-port.md`; `docs/design/multi-file.md` (D-018); `docs/design/package-api.md` (where `rust-main` will be added); D-013 (`dep()` ordering); D-019 (schema versioning).

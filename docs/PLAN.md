@@ -72,6 +72,7 @@ The "interactive / progressive" part.
 Some valuable directions are designed but explicitly **not on the critical path**. They're documented under `docs/tracks/` with their own phased plans, and never block the main Phase 1–4 journey. Currently:
 
 - **Semantic Typst** ([`tracks/semantic-typst.md`](tracks/semantic-typst.md)) — surface rust-analyzer's view of snippets (types, signatures, docs, diagnostics, refs) into the document, enabling literate programming with semantic awareness. Ships in four sub-phases S1–S4 (T-S01..T-S04 in `BACKLOG.md`); the first three are CLI-sidecar slices that piggy-back on the main-plan plumbing, S4 is the bigger WASM-plugin investment and is decision-gated. See D-020.
+- **Rust-by-example port** ([`tracks/rust-by-example-port.md`](tracks/rust-by-example-port.md)) — port the upstream rust-by-example book (~198 chapters) to Typst documents under `examples/rust-by-example/`, evaluated through evcxr-typst. The flagship "real Rust at scale" demonstration. Ships in seven sub-phases B0–B6 (T-B00..T-B06 in `BACKLOG.md`); B0 is tooling, B1–B2 the v0 deliverable, B3–B6 expand later. See D-022.
 
 If a main-plan task and a side-track task are both open, the main task wins.
 
