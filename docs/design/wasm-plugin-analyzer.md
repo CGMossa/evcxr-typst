@@ -70,6 +70,64 @@ The `packages/evcxr/lib.typ` changes minimally:
 
 A new `fallback.typ` path consumes `_diag(...)` to render a real diagnostic box when available; otherwise the existing placeholder.
 
+## Mechanism: how we'd actually depend on the fork
+
+This is the part most likely to bite. The fork (`cgmossa/rust-analyzer` branch `wasm`, currently at commit `8a79b99`) carries patches to make `ra_ap_*` compile to `wasm32-unknown-unknown`. None of those crates are themselves the fork — they're published on crates.io by upstream rust-analyzer, and that's what evcxr already consumes (pinned to `0.0.307`).
+
+To swap them for the fork's patched versions, Cargo's `[patch.crates-io]` is the right tool:
+
+```toml
+# crates/evcxr-typst-analyzer/Cargo.toml
+[patch.crates-io]
+ra_ap_ide      = { git = "https://github.com/CGMossa/rust-analyzer", rev = "8a79b99..." }
+ra_ap_ide_db   = { git = "https://github.com/CGMossa/rust-analyzer", rev = "8a79b99..." }
+ra_ap_hir      = { git = "https://github.com/CGMossa/rust-analyzer", rev = "8a79b99..." }
+ra_ap_syntax   = { git = "https://github.com/CGMossa/rust-analyzer", rev = "8a79b99..." }
+# … one entry per ra_ap_* crate the analyzer pulls transitively
+```
+
+`rev =` (a pinned commit), **not** `branch = "wasm"` — the latter resolves to whatever HEAD is at `cargo update` time, which is non-reproducible and a CI surprise machine. Pin the commit, bump deliberately.
+
+### The workspace patch-leakage problem
+
+`[patch.crates-io]` placed in our root `Cargo.toml` would apply to the *entire* dependency graph of the workspace, including the path-dep on `evcxr` (which has its own published-`ra_ap_*` consumers for type-inference and tab-completion). If the fork's API differs from upstream `0.0.307` at all, applying the patch at the workspace root breaks evcxr's own functionality for the whole project — just to support a sibling WASM build that nothing on the main path needs.
+
+Mitigation: **isolate `crates/evcxr-typst-analyzer/` into its own Cargo workspace.** Append a `[workspace]` block to its `Cargo.toml`, exactly like the wasm-minimal-protocol example does (`/Users/elea/Documents/GitHub/evcxr/.typst-wasm-minimal-protocol/examples/hello_rust/Cargo.toml`):
+
+```toml
+# crates/evcxr-typst-analyzer/Cargo.toml — bottom
+[workspace]    # excludes this crate from the parent workspace; the patch stays local
+```
+
+This keeps the patch's blast radius to the analyzer crate itself. The main `evcxr-typst` workspace continues to consume published `ra_ap_*` only (transitively via evcxr), unaffected.
+
+Cost: the analyzer crate doesn't share the parent's `Cargo.lock`, target dir, or `[profile.*]` settings. That's fine — the main `evcxr-typst` build doesn't depend on it (it's only loaded by Typst at compile time as an opaque `.wasm` artifact). The build pipeline becomes a two-step shell: (1) `cargo build --release --target wasm32-unknown-unknown` from inside `crates/evcxr-typst-analyzer/`; (2) wasm-opt + wasi-stub if needed; (3) copy the artifact to `packages/evcxr/analyzer.wasm` for the package release.
+
+### `0.0.x` versioning fragility
+
+`ra_ap_*` releases at `0.0.X`. Cargo treats `0.0.A` and `0.0.B` as **fully incompatible** (not minor-compatible the way `0.X.Y`/`0.X.Z` would be). Implications:
+
+- The fork must track evcxr's pinned `0.0.307` exactly. If evcxr bumps to `0.0.308` and we bump our path-dep to match, the fork has to rebase to `0.0.308` or we end up with two semver-incompatible `ra_ap_*` versions in the same dependency graph.
+- Rebase cadence is therefore tied to evcxr's `ra_ap_*` bump cadence, which is in turn tied to upstream rust-analyzer's release cadence (~weekly).
+- This is a real, ongoing maintenance burden, not a one-time cost. T-S04 must include "fork-rebase pipeline" as a sub-item before it's shippable.
+
+### Existing prior-art reference
+
+The Typst `wasm-minimal-protocol/examples/hello_rust/Cargo.toml` shows the exact isolation pattern we'd use, plus a release profile tuned for WASM size:
+
+```toml
+[profile.release]
+lto = true
+strip = true
+opt-level = 'z'
+codegen-units = 1
+panic = 'abort'
+
+[workspace]    # so that it is not included in the upper workspace
+```
+
+We'd match that profile and the workspace-isolation comment verbatim. Verified by inspecting `/Users/elea/Documents/GitHub/evcxr/.typst-wasm-minimal-protocol/examples/hello_rust/Cargo.toml`.
+
 ## Hard parts and risks
 
 1. **WASM rust-analyzer is heavy.** The compiled cdylib is multi-MB after wasm-opt. A Typst package shipping a several-MB plugin is workable (Universe accepts it; users download once) but it isn't trivial.
@@ -106,11 +164,13 @@ In Phase 5 the plugin lands as a self-contained addition: new crate, new package
 
 ## Open questions if we ever pull this forward
 
-1. Does the `cgmossa/rust-analyzer` wasm fork build clean against the same `0.0.307` `ra_ap_*` line evcxr pins, or does upgrading to whatever revision the fork targets ripple into evcxr's dep graph?
-2. Stdlib summary: how big, how often regenerated, who owns the regeneration script? Prior art in `rust-analyzer/crates/intern` and the rust-analyzer-wasm browser playground may give us a starting point.
-3. Cross-snippet items summary schema. Goes in `docs/design/schema-versioning.md` as a fifth `v` field if we ship.
-4. Is there a meaningful subset of rust-analyzer we could compile (just `ra_ap_syntax` for parse-only diagnostics, dropping `ra_ap_hir`/`ra_ap_ide_db`)? Smaller blob, less coverage. Probably worth measuring before committing to the full set.
-5. Does the wasm-minimal-protocol's WASM memory ceiling (typst limits per call?) admit a multi-MB analyzer cleanly? Test against a stub before designing the API.
+Answered in part by the Mechanism section above; the remainder:
+
+1. **Does the fork build clean against `0.0.307`?** Resolved-by-spike: T-S04-spike (one engineering day, parse-only `ra_ap_syntax` only). Until that runs, every other answer here is conditional.
+2. **Stdlib summary**: how big, how often regenerated, who owns the regeneration script? Prior art in `rust-analyzer/crates/intern` and the rust-analyzer-wasm browser playground may give us a starting point.
+3. **Cross-snippet items summary schema.** Becomes a fifth `v` field per D-019 if we ship.
+4. **Subset compilation.** Is there a meaningful subset of rust-analyzer we could compile (just `ra_ap_syntax` for parse-only diagnostics, dropping `ra_ap_hir`/`ra_ap_ide_db`)? Smaller blob, less coverage. The spike (T-S04-spike) starts with exactly this subset, so we get a measurement of the parse-only artifact size for free.
+5. **Memory ceiling.** Does the wasm-minimal-protocol's WASM memory budget (Typst's per-call limits?) admit a multi-MB analyzer cleanly? The spike's hello-world tells us at least the lower bound.
 
 ## Reference
 

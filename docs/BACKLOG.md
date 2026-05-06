@@ -270,13 +270,34 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 - **Briefing:** Run `RustAnalyzer::diagnostics` per snippet alongside `execute`; serialize to a separate `<id>.diagnostics.cbor` (or extend the semantic sidecar — TBD; document the choice when implementing). Add `evcxr.diagnostics-of(snippet-id)` to the package, rendering using the same styling as T-I07's compile-error box. This complements but does not replace rustc errors: rust-analyzer surfaces some issues earlier, rustc surfaces others (especially borrowck and codegen edge cases) only at compile time; both can coexist for a single snippet, ranked together.
 - **Done when:** snippet `g-error-case.typ` shows both an analyzer-level diagnostic and the rustc compile error in a stable order; the doc explains the difference in a one-line note above the box.
 
+### T-S04-spike · WASM build mechanism — empirical proof of concept
+
+- **Status:** open
+- **Track:** Semantic Typst
+- **Depends on:** — (independent of main path; can run any time)
+- **Reference reads:**
+  - `docs/design/wasm-plugin-analyzer.md` § "Mechanism: how we'd actually depend on the fork" (full story: patch-leakage, isolated `[workspace]`, pinned `rev`, `0.0.x` semver fragility)
+  - `/Users/elea/Documents/GitHub/evcxr/.typst-wasm-minimal-protocol/examples/hello_rust/Cargo.toml` (the canonical isolation pattern: bottom `[workspace]` block plus WASM-tuned `[profile.release]`)
+  - `cgmossa/rust-analyzer` branch `wasm`, commit `8a79b99` — verify it exists, capture the actual full commit SHA for pinning
+- **Briefing:** Hard time-box: **one engineering day**. Smallest possible WASM build that exercises the actual mechanism we'd use for T-S04:
+  - Create `crates/evcxr-typst-analyzer/` with its own `Cargo.toml` ending in a `[workspace]` block (so the parent `evcxr-typst` workspace doesn't see this crate).
+  - One `[patch.crates-io]` entry pointing at the fork, pinned by `rev =` (not `branch =`), for **just `ra_ap_syntax`** — nothing else. Parse-only, cheapest case.
+  - Cdylib using `wasm-minimal-protocol`: one `#[wasm_func] fn parse(src_cbor: &[u8]) -> Vec<u8>` that decodes a snippet string from CBOR, runs it through `ra_ap_syntax`, returns parse errors as CBOR.
+  - `[profile.release]` tuned for size per the upstream example. Build for `wasm32-unknown-unknown`. Run wasm-opt + wasi-stub if needed.
+  - Smallest possible Typst doc that loads the plugin via `plugin("./analyzer.wasm")` and round-trips a sample snippet. Verify it actually works under `typst compile`.
+- **Done when** (any resolves the gate):
+  - **(a) Works clean.** Output: the `.wasm` artifact (committed for reference, gitignored from regular builds), a measurement of blob size (uncompressed and brotli-compressed), and a one-page `docs/design/wasm-spike-results.md` with what broke / what worked / what surprised. T-S04 unblocks for an explicit ship decision.
+  - **(b) Hard blocker hit and not resolvable inside the time box.** E.g. the fork's commit doesn't compile against the published `ra_ap_syntax` API; `wasm-minimal-protocol` and `ra_ap_*` interact badly; blob size > 50 MB; missing wasi-stub coverage we can't quickly fill. Output: same one-page write-up describing exactly what blocks. T-S04 → `won't-do`.
+  - **(c) Time-box expires inconclusively.** Same write-up, T-S04 stays `blocked-on-decision`, write-up captures what the next attempt would need.
+- **Output (always):** `docs/design/wasm-spike-results.md` regardless of outcome.
+
 ### T-S04 · WASM analyzer plugin (the bigger one)
 
-- **Status:** blocked-on-decision
+- **Status:** blocked — waiting on T-S04-spike outcome
 - **Track:** Semantic Typst
-- **Depends on:** T-S01..T-S03 shipped (to validate the user-facing surface) · main-plan **T-I06** shipped (to keep the plugin work parallel to a safe, shipping CLI baseline)
-- **Reference reads:** `docs/design/wasm-plugin-analyzer.md` (the full analysis), `docs/tracks/semantic-typst.md` § "Architecture options"
-- **Briefing:** Build `crates/evcxr-typst-analyzer/` as a Typst plugin cdylib, using `ra_ap_*` patched per the `cgmossa/rust-analyzer` `wasm` branch. Bundle a precomputed stdlib summary. Define an items-summary input schema. Wire `packages/evcxr/lib.typ` to prefer the plugin when present and fall back to the CLI-sidecar path from T-S01..T-S03. Concrete sub-tasks (build pipeline, stdlib bundle generation, plugin API, items-summary schema, package wiring, integration tests) are deferred until this task is unblocked by an explicit decision to ship.
+- **Depends on:** T-S04-spike (must succeed, **(a)** outcome only) · T-S01..T-S03 shipped (to validate the user-facing surface) · main-plan **T-I06** shipped (to keep the plugin work parallel to a safe, shipping CLI baseline)
+- **Reference reads:** `docs/design/wasm-plugin-analyzer.md` (full analysis, including § "Mechanism"), `docs/tracks/semantic-typst.md` § "Architecture options", and the spike's `wasm-spike-results.md`.
+- **Briefing:** Build `crates/evcxr-typst-analyzer/` (already partially shaped by the spike) into a full Typst plugin cdylib, using the full `ra_ap_*` set patched per the fork. Bundle a precomputed stdlib summary. Define an items-summary input schema (a fifth versioned interface — register in `docs/design/schema-versioning.md` per D-019). Wire `packages/evcxr/lib.typ` to prefer the plugin when present and fall back to the CLI-sidecar path from T-S01..T-S03. Concrete sub-tasks (build pipeline including fork-rebase cadence playbook, stdlib bundle generation, plugin API, items-summary schema, package wiring, integration tests) get expanded once the spike returns success.
 - **Done when:** explicit decision to ship → expanded into a sub-backlog of concrete implementation steps. Or explicit decision to drop → closed as `won't-do` and the `wasm-plugin-analyzer.md` doc retained as research-only.
 
 ---
