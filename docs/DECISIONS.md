@@ -169,7 +169,7 @@ The cache directory sits at the workspace level (alongside the `.typ` source), g
 
 **Rationale:** Validated against all 8 `.typ` files in `docs/design/examples/`. `rust` reads naturally in flow and matches the language tag; `rust-out` is brief enough to live inline ("The answer is #rust-out(...)"); `rust-display` matches evcxr's `EVCXR_BEGIN_CONTENT` vocabulary and avoids colliding with Typst's `show` rule; `rust-hidden` describes the rendering rather than guessing intent (covers both setup-style and intentionally-suppressed cases); `show: "both"` matches Jupyter-cell convention and matches every `#rust(...)` use in the gallery without needing per-call overrides; `dep(name, version)` is the canonical form already used by the gallery (`#dep("regex", "1")`).
 
-**Consequences:** ARCHITECTURE.md's `<evcxr-snippet>.kind` enum lists exactly these five kinds. `rust-html` is *not* a separate function in v0; HTML output is one of the artifacts surfaced by `rust-display` via `prefer: "html"`. The `dep()` API is mildly overloaded (two-arg positional, kwargs, TOML escape hatch) but each form serves a distinct case. Per-snippet `timeout:` kwarg remains deferred (T-D08).
+**Consequences:** ARCHITECTURE.md's `<evcxr-snippet>.kind` enum lists exactly these five kinds. `rust-html` is *not* a separate function in v0; HTML output is one of the artifacts surfaced by `rust-display` via `prefer: "html"`. The `dep()` API is mildly overloaded (two-arg positional, kwargs, TOML escape hatch) but each form serves a distinct case. (Per-snippet `timeout:` kwarg later resolved by D-017 — shipped in v0 on every eval function.)
 
 **Reference:** `docs/design/package-api.md` § 7 (resolved) and § 2; gallery `docs/design/examples/`.
 
@@ -231,3 +231,68 @@ The cache directory sits at the workspace level (alongside the `.typ` source), g
 **Consequences:** The materialization path adds a "compare-then-rename" branch. If the comparison disagrees (bytes differ), the original atomic-rename path applies unchanged. CAS-by-key behaviour, GC, hardlink-vs-copy choice, and all other cache.md guarantees are unaffected.
 
 **Reference:** `docs/design/watch-loop.md` § 9 (resolved Q1); `docs/design/cache.md` § "Atomic-write strategy" (updated).
+
+---
+
+## D-017 — Per-snippet `timeout:` kwarg ships in v0; SIGKILL-only cancellation; per-snippet wins over the global flag
+
+**Status:** accepted · 2026-05-06
+
+**Decision:**
+- Every eval-emitting package function — `rust`, `rust-out`, `rust-display`, `rust-hidden`, `rust-data` — accepts a `timeout:` kwarg in v0. `dep()` does **not** accept it.
+- Accepted forms: `auto` (default; defer to `--snippet-timeout`), `none` (disable for this snippet), a Typst `duration`, a bare integer (interpreted as seconds), or a `<int>(ms|s|min|h)` string. The package validates and emits an integer-millisecond value (or `null`/`"none"`) into `<evcxr-snippet>.options.timeout_ms`.
+- **Per-snippet wins.** When `timeout:` is anything other than `auto`, the global `--snippet-timeout` does not apply — neither floor nor ceiling. `--no-snippet-timeout` only sets the global default; per-snippet still overrides.
+- Cancellation is **SIGKILL-only**. evcxr's `ChildProcess` exposes one stop mechanism (`process_handle().kill()`), per `evcxr/src/child_process.rs`; there is no clean cancel signal in either the IPC protocol or the host runtime. On expiry: SIGKILL the host child, evcxr returns `Error::SubprocessTerminated` on the next call, fresh child spawns for the next snippet. `let` bindings from earlier snippets are lost (per D-011); items (`fn`, `struct`, `impl`, `mod`, `use`) are recompiled from `committed_state` and survive. Same shape as D-009.
+- The `tokio::time::timeout` wrapper covers `CommandContext::execute()` end-to-end, but inside that call evcxr runs `cargo build` synchronously in *our* thread before dispatching to the host child. SIGKILL on `process_handle()` does not stop a running cargo invocation, so a snippet wedged in cargo (procedural macro looping, etc.) overshoots `timeout:` by the cargo runtime. Documented as a known floor in `package-api.md` § 2.8; matches D-009's behaviour.
+- `dep()` resolution does not run inside a timed `execute()`. The global flag covers `:dep` work; per-snippet `timeout:` is intentionally not exposed on `dep()` because there is no per-`dep()` cargo-cancellation primitive to drive it.
+
+**Rationale:** D-009 deferred this kwarg pending clarity on evcxr's child-cancellation semantics. The clarity now: there is no clean cancel; only SIGKILL. That answer is *not* a blocker — it's identical to what the global timeout already does. No additional mechanism is needed; we just parameterise the duration we already pass to `tokio::time::timeout`. The ergonomic value (long benchmarks, async runs, intentional infinite loops) is real and present in the gallery (`f-async-tokio.typ`, `h-mini-report.typ` heavy snippets). Per-snippet wins (vs. minimum-wins or maximum-wins) is the rule that least surprises an author who explicitly wrote `timeout:` to override; it also matches how every other per-call kwarg overrides `setup()` defaults in this package.
+
+**Consequences:** The package's `<evcxr-snippet>.options` schema gains an optional `timeout_ms` field. The CLI's per-snippet driver reads `options.timeout_ms` and passes it to the wrapping `tokio::time::timeout`; absent or `null` falls back to `--snippet-timeout`. The `dep()` sub-cargo race is documented but not solved; a future upstream primitive (e.g. cargo cancellation, or evcxr-side `:dep` cancellation) would tighten it. No upstream evcxr patch is required for v0.
+
+**Reference:** D-009 (deferral); `evcxr/src/child_process.rs` (kill mechanism); `evcxr/src/eval_context.rs` (execute path); `docs/design/package-api.md` § 2.8; `docs/design/errors.md` § 1.e.
+
+---
+
+## D-018 — Multi-file project model: single entry file, auto-discovered imports, cache rooted at entry-file parent
+
+**Status:** accepted · 2026-05-06
+
+**Decision:**
+- **Project model.** A project has exactly one **entry file** in v0 (the `.typ` passed to `evcxr-typst run`). The entry file's parent directory is the **workspace / project root**. **Member files** are the transitive set of local `.typ` files reached from the entry by following `#import`/`#include` of local-path string literals. `@preview/` and `@local/` package imports are not followed in v0 (their snippets are not evaluated by `evcxr-typst`).
+- **Single vs multi-entry.** Single-entry-file only in v0. Users with multiple entry files (e.g. `paper.typ` + `slides.typ` sharing `lib.typ`) run two `evcxr-typst` invocations side-by-side; the CAS is shared automatically. Multi-entry as a first-class mode is deferred to v1; the on-disk layout is forward-compatible (per-entry `index.<stem>.json` + per-entry `views/<stem>/` materialized view).
+- **Discovery.** On every cycle: BFS from the entry file, parsing each member's source with `typst-syntax` to collect `ModuleImport` / `ModuleInclude` targets. An optional `evcxr-typst.toml` `[project] files = [...]` at the workspace root overrides discovery (escape hatch for dynamic imports, hermetic CI).
+- **Global snippet ordering.** Snippets are flattened into a single global order `(file_seq, doc_order_within_file)`, where `file_seq` is BFS encounter order. Diamond imports visit each file once; the first import claims the slot. This global order feeds `prior_chain_hash`, `:dep` activation order, and the metadata's `loc.doc_order`.
+- **Cache scope.** The cache lives at `<workspace>/.evcxr-typst-cache/v1/`, where `<workspace>` is the entry file's parent directory. The CAS is shared across entry files in the same workspace and across documents (free dedup). The id-addressed view (`index.json` + materialized `<id>.<ext>`) is per entry file. With one entry file, the layout collapses to ARCHITECTURE.md's original `<id>.<ext>` flat shape.
+- **`dep()` visibility.** Global, document-order: a `#dep` is visible to every snippet later in global order, regardless of file boundaries. Conflict detection (D-013) names file paths in the error message.
+- **ID collision rule.** Project-wide, not per-file. Default-ID collisions get the occurrence-index suffix (D-007); explicit-ID collisions are a hard error citing both source files.
+- **Watch set.** Union of all member files plus their parent directories, recomputed by diffing prev/curr discovered sets after each successful query.
+
+**Rationale:** The entry-file-as-identity model avoids forcing a manifest on users while keeping discovery deterministic. Rooting the cache at the entry-file parent matches the natural Typst project layout (project = directory) and keeps `cache.md`'s "workspace level" claim honest. CAS sharing falls out of D-010 unchanged. Single-entry v0 is the smallest design that handles the bulk of real projects (one paper, one report, one slide deck) while leaving a clean v1 path for shared-library projects.
+
+**Consequences:** Discovery costs an extra `typst-syntax` parse per member file per cycle. Cheap; absorbed by the cache. Users with imports we can't statically resolve fall back to the TOML override. The package side of v0 doesn't need to know which entry file it's being rendered for — there's only one. That simplification disappears in v1. Open: verify `typst query` location output to see if it already reports source-file paths (would simplify discovery; tracked in `multi-file.md` § 9 Q1).
+
+**Reference:** `docs/design/multi-file.md`; `docs/design/cache.md` § "Cache layout on disk"; `docs/design/watch-loop.md` § 9 Q2 (resolved); D-013 (`dep()` ordering); D-007 (ID collisions).
+
+---
+
+## D-019 — Schema versioning policy: per-interface `v`, `min-cli` declared in `setup()`, side-by-side cache migrations
+
+**Status:** accepted · 2026-05-06
+
+**Decision:**
+
+- Four independent `v` fields — `<evcxr-snippet>.v`, `<evcxr-dep>.v`, `<id>.error.json.v`, and the on-disk cache layout (`v1/`) — all currently at `1`. Each bumps **major-breaking-only**: rename / remove / type-change of an existing field. Adding optional fields, new enum variants in `kind`/`phase`, or new keys inside `options` does not bump.
+- The CLI semver and the Typst package semver evolve independently of the four `v` fields.
+- **Forward compatibility**: older readers ignore unknown additive fields (documented promise for `options` and equivalents). Unfamiliar `v` values are a hard error, not best-effort parsing.
+- **Backward compatibility**: each `v: N` reader is required to also accept `v: N-1`. Older than that requires regenerating sidecars.
+- **Min-CLI mechanism**: the Typst package declares `min-cli: "X.Y.Z"` as a kwarg on its `setup()` call. The package emits a top-level `<evcxr-min-cli>` metadata marker; the CLI reads it during `typst query` and exits with code `2` and a clear "upgrade evcxr-typst or pin the package" message if its own `CARGO_PKG_VERSION` is below the requirement. The package never tries to detect the CLI; it only declares.
+- **Min-package mechanism**: none. Asymmetric on purpose — the CLI is what the user actively chose; the package is a transitive dependency. Missing-feature warnings are advisory at most.
+- **Cache layout migration**: side-by-side. When the CLI bumps from `v1/` to `v2/`, it creates `v2/` and proceeds; `v1/` is preserved (effectively a cold cache for one run). `evcxr-typst clean --layout v1` removes a specific older layout; auto-deletion is rejected as a foot-gun. Downgrade-and-re-run continues to work.
+- **Unknown-`v` rendering on the package side**: an `_evcxr-error-box` (per `errors.md` § 4) with header label `schema mismatch` and body advising the user to upgrade `@preview/evcxr` or downgrade `evcxr-typst`. The box replaces the snippet output, identical to other error boxes.
+
+**Rationale:** The four versioned interfaces are independent in practice (a CLI release can change `<id>.error.json` without touching `<evcxr-snippet>`), so coupling them under one number would force needless re-renders. Major-breaking-only keeps `v` rare and meaningful — versioned interfaces with a chatty `v` field encourage readers to gate on exact match, which defeats forward compat. `min-cli` in `setup()` was preferred over a standalone `<evcxr-min-cli>` marker (forces every doc to add boilerplate) and over a runtime check function (easy to forget to call); folding it into the already-recommended `setup()` is the lightest viable surface. Side-by-side cache migration trades a one-time cold cache for never-corrupt downgrades and matches how `cargo` handles target-dir layout bumps. The asymmetric "no min-package" choice keeps the CLI authoritative; users curate the binary, not transitive packages.
+
+**Consequences:** Each schema doc (`package-api.md` § 5, `errors.md` § 2, `cache.md` § "Cache layout") gains a one-line link to `schema-versioning.md` rather than restating the policy. The package picks up `evcxr.max-supported-error-v` as a constant for the unknown-`v` error message. CLIs supporting older packages must keep older `v: N-1` writers around for one major — bounded cost. Releases now have a checklist item: bump the relevant `v`, update `min-cli:` if applicable, log the cache migration in release notes.
+
+**Reference:** `docs/design/schema-versioning.md` (canonical policy, all seven question areas covered).

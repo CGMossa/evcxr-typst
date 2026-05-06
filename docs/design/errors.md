@@ -9,7 +9,8 @@ reader of the rendered Typst document and the developer running
 > `rust-data()`, `rust-hidden()`, `dep()`. (`rust-html()` is *not* a
 > separate function in v0 — HTML is one of the artifacts surfaced by
 > `rust-display()` via its `prefer:` kwarg.) Per-snippet `timeout:` kwarg
-> remains deferred under T-D08 (RECON-T-D03 → T-D08).
+> ships in v0 on every eval-emitting function (D-017); see § 1.e and
+> `package-api.md` § 2.8.
 
 ---
 
@@ -73,8 +74,8 @@ timeout error, and continue with a fresh child.
 
 Configurable via:
 
-- CLI flag: `--snippet-timeout 60s` (or `--no-snippet-timeout` to disable)
-- Per-snippet override via Typst-side `rust(..., timeout: 5min)` (RECON-T-D03)
+- CLI flag: `--snippet-timeout 60s` (or `--no-snippet-timeout` to disable). Sets the global default applied when a snippet's `timeout:` kwarg is `auto` (the default).
+- **Per-snippet override** via Typst-side `rust(..., timeout: 5min)` and analogously on `rust-out`, `rust-display`, `rust-hidden`, `rust-data`. **Resolved (D-017):** ships in v0. The kwarg accepts `auto` (use global), `none` (disable for this snippet), a Typst `duration`, a bare integer (interpreted as seconds), or a `<int>(ms|s|min|h)` string. Per-snippet wins unconditionally over the global flag — no minimum-wins, no maximum-wins. `dep()` does not accept `timeout:`. Cancellation semantics are identical to the global case (SIGKILL the host child, fresh child for the next snippet, `let` bindings lost, items survive). Full kwarg shape and edge cases — including the cargo-runtime floor and the `:dep` race — are documented in `package-api.md` § 2.8.
 
 ---
 
@@ -321,7 +322,7 @@ A `theme: "auto" | "light" | "dark"` parameter passes through to the
 `_evcxr-error-box` helper for users with dark-mode Typst themes.
 
 A user-customizable hook is exposed: `evcxr.error-style.set(box: ..., header:
-..., footer: ...)` — covered in T-D03's API surface (RECON-T-D03).
+..., footer: ...)` — covered in T-D03's API surface.
 
 ---
 
@@ -559,8 +560,9 @@ recover from (3 child re-spawns within 10s → bail with an explicit message).
   dep-resolution, timeout, internal. (§ 1)
 - Cross-snippet errors render the box at the *referencing* snippet, with the
   defining snippet linked. (§ 3)
-- Timeout: yes, default 30s, configurable via CLI flag and per-snippet
-  parameter. (§ 1.e)
+- Timeout: yes, default 30s, configurable via CLI flag (`--snippet-timeout`)
+  and per-snippet kwarg (`timeout:` on every eval function; per-snippet
+  wins). SIGKILL-only cancellation. (§ 1.e; D-009 + D-017)
 - Sidecar at `<id>.error.json`, schema v1, errors[] array, byte-offset
   spans, severity per error, panic/timeout/dep sub-objects. (§ 2)
 - Terminal: ariadne via evcxr's existing `build_report()`, with multi-source

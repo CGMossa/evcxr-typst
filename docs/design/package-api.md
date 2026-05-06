@@ -4,6 +4,8 @@ Public API of `packages/evcxr/` — what users write inside their `.typ` documen
 
 > **Reconciliation needed.** T-D02's example gallery is not on disk yet (`docs/design/examples/` is empty). This design proceeds from the briefing's strawman primitives (`rust`, `rust-out`, `rust-display`, `rust-hidden`, `rust-data`, `dep`) and the requirements in ARCHITECTURE.md and DECISIONS.md. The orchestrator should reconcile naming with the gallery once it lands; if a gallery example forces a different shape, that takes precedence and the contradictions become real ones to resolve.
 
+> **Per-snippet `timeout:` resolved (D-017).** Shipped in v0 on every eval-emitting function (`rust`, `rust-out`, `rust-display`, `rust-hidden`, `rust-data`); `dep()` does *not* accept it. Cancellation is SIGKILL-only; semantics match D-009 (host child dies, fresh child re-spawns, `let` bindings lost, items recompiled). See § 2.8 for the kwarg shape and § 6 for what stays deferred.
+
 ---
 
 ## 1. Top-level design choices
@@ -68,6 +70,7 @@ All functions take an optional `id: none` and `deps: ()` (covered in §4). They 
   show: auto,             // "source" | "output" | "both" | "output-only" | auto
   caption: none,          // figure caption; if set, wraps in figure
   source-lang: "rust",    // for the rendered source block
+  timeout: auto,          // per-snippet override; see § 2.8
 ) -> content
 ```
 
@@ -83,7 +86,7 @@ println!("sum = {}", xs.iter().sum::<i32>());
 ### 2.2 `rust-out(src, ..)` — output only, source hidden
 
 ```typc
-#let rust-out(src, id: none, deps: (), ..) -> content
+#let rust-out(src, id: none, deps: (), timeout: auto, ..) -> content
 ```
 
 Evaluates the snippet, renders only the captured plain stdout. Source is recorded in metadata (so the CLI evaluates it) but not displayed.
@@ -97,7 +100,7 @@ This is the inline-friendly form; the rendered output is `text/plain` content fr
 ### 2.3 `rust-display(src, ..)` — display object only
 
 ```typc
-#let rust-display(src, id: none, deps: (), prefer: auto, ..) -> content
+#let rust-display(src, id: none, deps: (), prefer: auto, timeout: auto, ..) -> content
 ```
 
 Evaluates the snippet and renders only the highest-priority display artifact — the thing emitted via evcxr's `EVCXR_BEGIN_CONTENT` protocol (image, html, …), not plain stdout. If multiple display artifacts were emitted, `prefer:` picks one (`"png"`, `"svg"`, `"html"`, `"jpeg"`); `auto` follows the priority order in §5.
@@ -117,7 +120,7 @@ If no display artifact was produced (snippet only printed text), this renders th
 ### 2.4 `rust-hidden(src, ..)` — execute, render nothing
 
 ```typc
-#let rust-hidden(src, id: none, deps: ()) -> content
+#let rust-hidden(src, id: none, deps: (), timeout: auto) -> content
 ```
 
 Used for setup snippets: define a struct, import a module, run side-effecting fixtures. Emits the metadata marker (so the CLI evaluates it) but produces no visible content. Returns `none`-equivalent content; safe to use at top-level or inside `#{ … }`.
@@ -140,6 +143,7 @@ fn make_data() -> Vec<Sample> { /* … */ }
   deps: (),
   format: auto,           // "json" | "cbor" | auto (sniff)
   fallback: (:),          // value to return when no sidecar yet exists (pre-CLI run)
+  timeout: auto,          // per-snippet override; see § 2.8
 ) -> any
 ```
 
@@ -205,6 +209,68 @@ Returning a **handle** (an opaque dict with the dep's id) is supported via `let 
 
 - `evcxr.version` — string, matches `typst.toml`. Exposed for fallback diagnostics.
 - `evcxr.fallback` — Typst `state`, mirrors prequery's switch. Setting `evcxr.fallback.update(true)` (or `--input evcxr-fallback=true`) forces every snippet into placeholder mode regardless of sidecar presence. Useful when authoring new snippets without running the CLI.
+
+### 2.8 `timeout:` kwarg — per-snippet override (D-017)
+
+Every eval-emitting function (`rust`, `rust-out`, `rust-display`, `rust-hidden`, `rust-data`) accepts `timeout:`. **`dep()` does not** — `:dep` resolution does not run inside the timed `execute()` call (see "What `timeout:` does *not* cover" below).
+
+**Accepted values.**
+
+| Form | Meaning |
+|---|---|
+| `auto` *(default)* | Use the global timeout from `--snippet-timeout` (default 30s, per D-009). |
+| `none` | Disable the timeout for *this* snippet only. The global flag is ignored. |
+| `duration` | A Typst `duration` value, e.g. `5s`, `2min`, `1h + 30s`. |
+| `<integer>` | Bare integer is interpreted as **seconds** (so `timeout: 60` = 60s). |
+| `<string>` | Pattern `^([0-9]+)\s*(ms|s|min|h)$`, e.g. `"500ms"`, `"5min"`. Whitespace between digits and unit is allowed. |
+
+The package validates the form at metadata-emission time (Typst `assert(...)`); invalid input fails `typst compile` with a useful message naming the snippet id.
+
+The metadata marker carries the resolved value as **integer milliseconds** in `<evcxr-snippet>.options.timeout_ms` (or `null` for `auto`, the literal string `"none"` for explicit disable). The CLI consumes that.
+
+**Example.**
+
+```typ
+#rust(timeout: 5min, ```rust
+let mut acc = 0u64;
+for i in 0..100_000_000 { acc = acc.wrapping_add(i); }
+println!("{acc}");
+```)
+
+#rust-hidden(timeout: "500ms", ```rust
+// Quick fixture; if it hangs we want to know fast.
+let _ = std::fs::read_to_string("/etc/hostname").unwrap();
+```)
+
+#rust(timeout: none, ```rust
+// User opts into a possibly-infinite computation.
+loop { /* … */ }
+```)
+```
+
+**Interaction with `--snippet-timeout`.**
+
+Resolution rule: **per-snippet wins, full stop.** If `timeout:` is set to anything other than `auto`, the global flag does not apply — neither as a floor nor as a ceiling. Rationale: minimum-wins surprises authors who explicitly raise the limit; maximum-wins surprises the inverse. Single-rule override matches how every other per-call kwarg in the package interacts with `setup()` defaults.
+
+`--no-snippet-timeout` on the CLI sets the global default to "none"; per-snippet `timeout:` still overrides it.
+
+**What happens on expiry — same as D-009.**
+
+Cancellation is **SIGKILL-only**. evcxr's `ChildProcess` exposes one stop mechanism (`process_handle().lock().unwrap().kill()`); there is no clean cancel signal in either the IPC protocol or the host child's runtime (confirmed by reading `evcxr/src/child_process.rs` and `evcxr/src/eval_context.rs`). On expiry, `evcxr-typst` SIGKILLs the host child, evcxr's next call returns `Error::SubprocessTerminated`, and a fresh child is spawned for the next snippet. All `let` bindings established before the timed-out snippet are lost (per D-011); items (`fn`, `struct`, `impl`, `mod`, `use`) are recompiled from `committed_state` and survive.
+
+The error sidecar is `<id>.error.json` with `phase: "timeout"` and `errors[0].timeout = { duration_ms: <resolved>, captured_stdout_bytes: <n> }` (schema in `errors.md` § 2). Partial stdout captured up to the kill point is preserved as `<id>.txt` (`errors.md` § 1.e).
+
+**What `timeout:` does *not* cover.**
+
+The timer wraps `CommandContext::execute(<snippet src>)`. That call internally:
+
+1. Adjusts state (cheap, in-memory).
+2. Runs `cargo build` for the snippet's wrapper crate (in *our* thread, not the host child).
+3. Loads the resulting cdylib via `libloading` and dispatches to the host child to run it.
+
+A SIGKILL on `process_handle()` aborts step 3 only. It does **not** stop a running cargo invocation in step 2 — cargo is a synchronous child of the calling thread, and the `tokio::time::timeout` returns from the *await* but the cargo subprocess keeps running until it exits or the OS reaps it on `evcxr-typst` shutdown. Practical effect: a snippet that wedges in `cargo build` (e.g. a procedural macro that itself loops) will exceed `timeout:` by the cargo runtime. We accept this; it's a consequence of evcxr's architecture and matches D-009's behaviour exactly. Documenting it here so users with very tight timeouts (sub-second) know the floor is "however long cargo takes."
+
+**Race with `:dep` resolution.** Per-snippet `timeout:` does *not* apply to `dep()` calls (no `timeout:` kwarg on `dep`). `dep()` produces `<evcxr-dep>` markers that the CLI realises into `:dep` directives **before** any `CommandContext::execute(<snippet>)` call. Those `:dep` directives ultimately drive `cargo build` inside an `execute()` call in step 2 above; the global `--snippet-timeout` covers them but not at sub-cargo granularity. If a `:dep` resolution is slow, the responsibility is on the global flag, not on a per-snippet kwarg that didn't fire yet. Documented as a known boundary.
 
 ---
 
@@ -361,7 +427,6 @@ Fields:
 - **Inline expressions inside Rust source.** No `#{some_typst_expr}` interpolation into Rust. Users compose at the Typst level (call `rust-data`, splice the dict). Adding interpolation would require Typst-side template expansion before metadata emission, which fights Typst's evaluation model.
 - **Streaming long output.** No `rust-stream()` for snippets that take minutes and the user wants partial progress. v0 is batch-only.
 - **Capture by binding rather than by sidecar.** A would-be `let x = rust(...)` returning the snippet's last expression value (à la a notebook cell). Neat, but requires exotic round-tripping; `rust-data` covers the common need.
-- **Per-snippet timeout kwarg.** `timeout: 30s`. Defer until we know whether evcxr's child supports clean cancellation mid-eval (T-D06 territory).
 - **Diagnostic-rich error rendering.** v0 gets a generic placeholder when a snippet errored; T-D06 designs the proper error UI and may add a `rust-error-style:` setup option.
 
 ---
@@ -383,4 +448,4 @@ Validated against the example gallery in `docs/design/examples/` (all 8 `.typ` f
    The two-arg positional form is the canonical one in the gallery; kwargs cover the realistic surface; the TOML escape hatch survives for power users without forcing a separate `dep-toml` function. **`dep()` calls remain inline-anywhere**; the CLI pre-collects them in document order and errors on conflicting versions per snippet-semantics G5 (see D-013).
 7. **Schema additions (`deps`, `options`) on `<evcxr-snippet>`.** Folded in. The architecture sketch already declared the schema "subject to change pre-1.0; pinned via a version field"; these additions are a strict superset, so `v` stays at `1`. ARCHITECTURE.md was updated in the same pass that added DECISIONS.md D-012. (No separate decision; bookkeeping only.)
 
-Open question: per-snippet `timeout:` kwarg is **deferred** (D-009 RECON-T-D03; tracked under T-D08).
+Per-snippet `timeout:` kwarg shipped in v0 (D-017); see § 2.8.

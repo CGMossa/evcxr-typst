@@ -14,7 +14,7 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ### T-D07 · Reconcile open questions left by Phase-0 drafts
 
-- **Status:** open
+- **Status:** done · 038d2bc · D-012..D-016 added · `docs/design/{package-api,snippet-semantics,errors,watch-loop,cache,examples/index}.md` updated in place
 - **Phase:** 0 (design follow-up)
 - **Depends on:** —
 - **Reference reads:** all of `docs/design/*.md` and `docs/DECISIONS.md` D-007..D-011
@@ -30,32 +30,35 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ### T-D08 · Decide on per-snippet `timeout:` kwarg in the package API
 
-- **Status:** open
+- **Status:** done · D-017 · `docs/design/package-api.md` (new § 2.8, signatures updated, deferred entry removed); `docs/design/errors.md` (§ 1.e expanded, RECON-T-D03 flags resolved); `docs/DECISIONS.md` (D-017 added)
 - **Phase:** 0 (design follow-up)
 - **Depends on:** T-D07
 - **Reference reads:** `docs/DECISIONS.md` D-009; `docs/design/errors.md` § 1.e; `docs/design/package-api.md` § 6
 - **Briefing:** D-009 deferred per-snippet timeout overrides because evcxr's child-cancellation semantics weren't clear. Read `evcxr/src/eval_context.rs` for what `execute` actually does on cancellation; decide whether `rust(..., timeout: 5min)` is shippable in v0 or stays deferred. Either way, document the decision and update the `errors.md` RECON-T-D03 flag.
 - **Done when:** decision recorded as a new D-xxx entry; `errors.md` flag resolved; `package-api.md` § 6 updated accordingly.
+- **Resolution:** Shipped in v0 (D-017). evcxr's `ChildProcess` only exposes SIGKILL; that's identical to what D-009's global timeout already uses, so per-snippet adds no new cancellation primitive — only a per-call duration. Kwarg accepts `auto`/`none`/`duration`/`<int seconds>`/`<int>(ms|s|min|h)`; per-snippet wins unconditionally over `--snippet-timeout`; applies to all five eval functions (not `dep()`); documented cargo-runtime floor and `:dep` race.
 
 ### T-D09 · Multi-document and multi-file project layout
 
-- **Status:** open
+- **Status:** done · `docs/design/multi-file.md` · D-018 added; `watch-loop.md` § 9 Q2 resolved
 - **Phase:** 0 (design follow-up)
 - **Depends on:** T-D07
 - **Reference reads:** `docs/design/watch-loop.md` open Q2; `docs/design/cache.md` § "Cache layout on disk" (cache lives at workspace level)
 - **Briefing:** A real Typst project rarely lives in one `.typ` file. Designing for `#import "chapter1.typ"` etc.: where does the cache live, how do snippets in `chapter1.typ` reach `dep()`s declared in `main.typ`, what's the watch-set, what's the run command (one `main.typ` is the entry, dependent files are auto-discovered)? Probably v0 supports a single entry file + auto-discovered imports, multi-entry-file projects deferred.
 - **Output:** new `docs/design/multi-file.md`.
 - **Done when:** the file exists; covers cache scope, watch-set discovery, dep visibility across files, entry-file selection on the CLI.
+- **Resolution:** v0 = single entry file; cache rooted at entry-file parent (CAS shared across entry files in the same workspace, id-addressed view per entry); discovery = BFS from entry parsing local `#import`/`#include` via `typst-syntax`, with `evcxr-typst.toml` as an opt-in override; global snippet order is `(file_seq, doc_order_within_file)`; `dep()` visibility is global by document order; ID collisions are project-wide (default→suffix, explicit→hard error); watch set is the union of all member files, recomputed each cycle. See `docs/design/multi-file.md` and D-018.
 
 ### T-D10 · Schema versioning policy
 
-- **Status:** open
+- **Status:** done · `docs/design/schema-versioning.md` · D-019
 - **Phase:** 0 (design follow-up)
 - **Depends on:** —
 - **Reference reads:** ARCHITECTURE.md § "The metadata contract"; package-api.md § 5; errors.md § 2; cache.md § "Cache layout"
 - **Briefing:** Three `v` fields exist in the wild: `<evcxr-snippet>.v`, `<evcxr-dep>.v`, `<id>.error.json.v`. Plus a CAS layout `v1/`. Document policy: when do we bump? what's backward-compat strategy? what's the minimum-CLI-version-required mechanism so a Typst package release can refuse an old CLI cleanly?
 - **Output:** new `docs/design/schema-versioning.md` (~1 page).
 - **Done when:** the file exists; covers all four version fields and the CLI/package compatibility check.
+- **Resolution:** Major-breaking-only bumps for all four `v` fields (currently `1`); CLI and package semver track independently. Min-CLI declared via `min-cli: "X.Y.Z"` kwarg on `setup()`; CLI reads the resulting `<evcxr-min-cli>` marker during `typst query` and exits 2 if its own version is too old. No min-package check (asymmetric — CLI is authoritative). Cache migrations are side-by-side directories (`v1/` preserved when `v2/` lands). Unknown sidecar `v` renders as a `schema mismatch` error box.
 
 ---
 
