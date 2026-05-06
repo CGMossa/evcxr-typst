@@ -1,0 +1,11 @@
+[package]
+name = "evcxr"
+version = "0.0.1"
+entrypoint = "lib.typ"
+authors = ["Mossa <mossa@a2-ai.com>"]
+license = "MIT OR Apache-2.0"
+description = "Embed evcxr-evaluated Rust snippets in Typst documents"
+repository = "https://github.com/Mossa/evcxr-typst"
+keywords = ["rust", "evcxr", "evaluation"]
+categories = ["utility"]
+exclude = ["CLAUDE.md"]

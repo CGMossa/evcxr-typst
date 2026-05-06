@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[profile.dev]
+# Match evcxr's profile: runtime opt outweighs the compile-time hit for our use.
+# Don't lower this without measuring — see /Users/elea/Documents/GitHub/evcxr/Cargo.toml.
+opt-level = 2
+debug = 0

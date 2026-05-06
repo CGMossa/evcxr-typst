@@ -1,0 +1,18 @@
+[package]
+name = "evcxr-typst"
+version = "0.0.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Evaluate Rust snippets in Typst documents via evcxr"
+repository = "https://github.com/Mossa/evcxr-typst"
+publish = false
+
+[[bin]]
+name = "evcxr-typst"
+path = "src/main.rs"
+
+[dependencies]
+# D-006: path during dev. Switch to a published evcxr version before release.
+evcxr = { path = "../../../evcxr/evcxr" }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }

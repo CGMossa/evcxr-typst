@@ -159,17 +159,19 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ### T-I01 · Bootstrap `crates/evcxr-typst/` skeleton
 
-- **Status:** blocked-on Phase 0
+- **Status:** done · `crates/evcxr-typst/{Cargo.toml,src/main.rs,CLAUDE.md}`; root workspace `Cargo.toml`
 - **Phase:** 1
 - **Depends on:** T-D03, T-D04
 - **Done when:** crate compiles, has clap CLI shell, calls `evcxr::runtime_hook()` first thing in `main`.
+- **Resolution:** Skeleton committed. Clap subcommands `run`/`watch`/`clean` parse and exit 2 with "not yet implemented" — real bodies land per T-I03..T-I07. evcxr is a path dep (D-006). `runtime_hook()` is the first call in `main` per the evcxr re-entry contract.
 
 ### T-I02 · Bootstrap `packages/evcxr/` skeleton
 
-- **Status:** blocked-on Phase 0
+- **Status:** done · `packages/evcxr/{typst.toml,lib.typ,fallback.typ,CLAUDE.md}`
 - **Phase:** 1
 - **Depends on:** T-D03
 - **Done when:** package has `typst.toml`, `lib.typ` with stub `rust()` function emitting metadata, `fallback.typ` returning placeholder.
+- **Resolution:** All seven public functions per D-012/D-013/D-015/D-017/D-019 stubbed. Each emits the resolved metadata schema and renders the `fallback.placeholder()` box. No sidecar reading yet — that lands in T-I03.
 
 ### T-I03 · `evcxr-typst run` end-to-end smoke
 
@@ -216,7 +218,7 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ### T-H02 · `rustfmt.toml`
 
-- **Status:** open
+- **Status:** done · `rustfmt.toml` at repo root, mirrors evcxr verbatim (edition 2024, `use_field_init_shorthand`).
 - **Phase:** any
 - **Depends on:** T-I01
 - **Briefing:** Mirror evcxr's `rustfmt.toml` so we stay style-aligned with upstream.

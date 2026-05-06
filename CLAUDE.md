@@ -22,6 +22,15 @@ evcxr is a **dependency**, not part of this repo. The local clone lives at `/Use
 3. Each task has a "Done when" checklist — match it, don't expand scope.
 4. When you finish a task: edit `docs/BACKLOG.md` to mark it `done` with a one-line summary and a link to the commit/PR. If the work shifted the design, log it in `docs/DECISIONS.md`.
 
+## Repo layout
+
+- `docs/` — plans, decisions, design specs. Source of truth.
+- `crates/evcxr-typst/` — the Rust CLI. Has its own `CLAUDE.md`.
+- `packages/evcxr/` — the Typst package. Has its own `CLAUDE.md`.
+- `examples/` — end-to-end documents that exercise the integration. Has its own `CLAUDE.md`.
+
+Each scaffolding directory has a local `CLAUDE.md` with directory-specific conventions and required reading. Read the local one before editing anything in that directory.
+
 ## Conventions
 
 - Match evcxr's conventions where they apply: `cargo fmt --check` clean, dual MIT/Apache-2.0 license headers on new source files, `rustfmt.toml` should mirror evcxr's once we add one.
