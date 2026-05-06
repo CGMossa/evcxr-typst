@@ -181,12 +181,27 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 - **Done when:** package has `typst.toml`, `lib.typ` with stub `rust()` function emitting metadata, `fallback.typ` returning placeholder.
 - **Resolution:** All seven public functions per D-012/D-013/D-015/D-017/D-019 stubbed. Each emits the resolved metadata schema and renders the `fallback.placeholder()` box. No sidecar reading yet — that lands in T-I03.
 
+### T-L01 · Library API: split `lib.rs` + `main.rs` and expose the public surface
+
+- **Status:** open
+- **Phase:** 1 (precedes T-I03)
+- **Depends on:** T-I01 done
+- **Reference reads:** `docs/design/library-api.md` (full file); `docs/DECISIONS.md` D-023 (the decision); `/Users/elea/Documents/GitHub/evcxr/evcxr/examples/example_eval.rs` (the precedent)
+- **Briefing:** Refactor `crates/evcxr-typst/` to expose a public library API per D-023. Concrete steps:
+  - Create `lib.rs` exporting `Project`, `EvalOptions`, `WatchOptions`, `WatchHandle`, `EvaluationReport`, `Snippet`, `SnippetOutcome`, `SnippetResult`, `EvalCallbacks` trait, `Error` (a `thiserror`-derived enum), and any supporting types per `docs/design/library-api.md` § "Public API surface".
+  - Move clap parsing into a `cli` module under `main.rs` (or a dedicated `bin/` if cleaner). Library is clap-free.
+  - Stub the methods returning `Err(Error::NotImplemented)`; the real bodies land in T-I03 onward. Each stub has the right signature and doc comment.
+  - Add `crates/evcxr-typst/examples/library_use.rs` mirroring evcxr's `example_eval.rs` shape — calls `evcxr::runtime_hook()` first, then opens a project, then prints the snippet list. Will compile but `Project::evaluate()` returns `NotImplemented` until T-I03.
+  - Add `thiserror = "1"` to `[dependencies]`.
+- **Done when:** `cargo build -p evcxr-typst --all-targets` is clean (binary, library, and library_use example all build); `cargo doc -p evcxr-typst` produces docs without missing-doc warnings on public items; the `library_use` example compiles and runs (errors out cleanly with NotImplemented when `Project::evaluate` is called).
+
 ### T-I03 · `evcxr-typst run` end-to-end smoke
 
 - **Status:** blocked
 - **Phase:** 1
-- **Depends on:** T-I01, T-I02
-- **Done when:** matches PLAN.md Phase 1 "Done when".
+- **Depends on:** T-I01, T-I02, **T-L01** (real bodies populate the library API stubs)
+- **Reference reads:** `docs/design/library-api.md` (the API to fill in); existing Phase 0 design docs (architecture, package-api, multi-file)
+- **Done when:** matches PLAN.md Phase 1 "Done when". Plus: every code path runs through the library API; `main.rs` is a thin caller; the `library_use` example produces equivalent output to `evcxr-typst run`.
 
 ### T-I04 · MIME passthrough
 
@@ -324,8 +339,9 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 - **Track:** Rust-by-example port
 - **Depends on:** main-plan **T-I02** shipped (the `evcxr` package must exist to extend it with `rust-main`)
 - **Reference reads:**
-  - `docs/tracks/rust-by-example-port.md` (full track plan, especially § "Mapping" and § "Tooling")
-  - `docs/DECISIONS.md` D-022 (the track decision), D-019 (schema versioning — `auto-call` is additive)
+  - `docs/design/rbe-porter.md` (the full implementation spec — the load-bearing read; covers crate structure, dep choices, the scanner state machine, snippet detection corner cases, code-block tag matrix, cross-link resolution, determinism rules, manifest format, and the 10 required golden cases)
+  - `docs/tracks/rust-by-example-port.md` (parent track plan)
+  - `docs/DECISIONS.md` D-022 (track scope), D-024 (porter mechanism choices, including the no-pulldown-cmark rationale), D-019 (additive `options` keys)
   - `docs/design/package-api.md` (the function set `rust-main` joins)
   - `.rust-by-example/src/hello.md` and `custom_types/structs.md` (the canonical inputs)
 - **Briefing:** Two pieces in one task:

@@ -349,3 +349,46 @@ The cache directory sits at the workspace level (alongside the `.typ` source), g
 **Consequences:** New side-track tasks T-B00..T-B06 in `docs/BACKLOG.md`. New `tools/rbe-port/` workspace member. New `examples/rust-by-example/` output tree (gitignored or partially committed; phase choice). New `examples/rust-by-example/NOTICES.md` once B0 ships. Package gains `rust-main` once B0's spec lands; minor `lib.typ` addition. Schema's `options.auto-call` field added (additive). The `:cache` budget recommendation may need bumping to absorb the dep-heavy chapters in B6.
 
 **Reference:** `docs/tracks/rust-by-example-port.md`; `docs/design/multi-file.md` (D-018); `docs/design/package-api.md` (where `rust-main` will be added); D-013 (`dep()` ordering); D-019 (schema versioning).
+
+---
+
+## D-023 — `evcxr-typst` ships a public library API; binary is a thin wrapper
+
+**Status:** accepted · 2026-05-06
+
+**Decision:**
+- `crates/evcxr-typst/` carries both `lib.rs` (public library) and `main.rs` (CLI wrapper) in the same crate. One crate to crates.io named `evcxr-typst`. `cargo install evcxr-typst` ships the binary; `evcxr-typst = "X.Y"` in another crate's `Cargo.toml` ships the library.
+- The library exposes `Project::open / evaluate / watch / clean_view`, `EvalOptions`, an `EvalCallbacks` trait for snippet-lifecycle hooks, and a typed `Error` enum (using `thiserror`, not `anyhow`).
+- `runtime_hook()` is the embedder's responsibility — must be called first thing in `main()`. Library functions never call it. Documented prominently in the crate root and in every example.
+- Library API is sync. Async at the library boundary is rejected for v0 — the watch loop uses `notify` + a thread; the eval boundary blocks; consumers spawn their own runtime if they want non-blocking. `tokio::time::timeout` per D-017 is implementation detail, not exposed.
+- API is unstable pre-1.0. SemVer-minor bumps may break compile-time. Documented in the crate's docs.rs landing page.
+- Re-evaluating a single snippet (`Project::evaluate_one`) is **deferred** to a real consumer asking — watch already does fine-grained re-eval internally; no public API surface yet.
+- A separate `evcxr-typst-core` library crate (rejected): would force two crates to publish, version, and document. The single-crate path keeps shipping cheap; we revisit only if the binary's deps grow heavy enough to want isolation.
+
+**Rationale:** the library API is approximately the binary minus runtime_hook + clap + eprintln-reporting. Structuring the crate that way from the start (i.e. before T-I03 lands real eval logic) avoids the trap where helpers accrete in private functions and never become `pub`. evcxr's own precedent is the `EvalContext` library + `evcxr_repl` / `evcxr_jupyter` binary embedders pattern, which scales — we follow it. Sync-by-default at the library boundary matches evcxr (`EvalContext::eval` is sync) and avoids forcing tokio on every consumer for negligible benefit.
+
+**Consequences:** T-I01's scaffolding needs minor refactor (move clap parsing into a `cli` module, expose the eval pipeline via `lib.rs`) — handled as part of T-L01 below. `crates/evcxr-typst/examples/library_use.rs` ships as the canonical embedder example, mirroring evcxr's `example_eval.rs`. `thiserror` becomes a library dependency (small).
+
+**Reference:** `docs/design/library-api.md`; `/Users/elea/Documents/GitHub/evcxr/evcxr/examples/example_eval.rs` (precedent); D-004 (allow-eval safety surfaces in `EvalOptions::deny() / ::allow_eval()`); D-017 (timeout, hidden behind `EvalOptions::with_snippet_timeout`).
+
+---
+
+## D-024 — `tools/rbe-port/` uses a hand-written scanner + `syn` (not `pulldown-cmark`)
+
+**Status:** accepted · 2026-05-06
+
+**Decision:**
+- The rust-by-example porter is implemented as a hand-written line/state-machine scanner for markdown, plus `syn` for accurate `fn main()` detection in fenced Rust blocks. **No** `pulldown-cmark` / `comrak` / `markdown-rs` dependency.
+- Markdown features handled: fenced code blocks (the load-bearing case), headings, paragraphs, emphasis, inline links, mdBook ref-style links (`[text][key]` ... `[key]: url`), lists. Anything more exotic falls back to verbatim pass-through.
+- Crate is workspace-isolated: `tools/rbe-port/Cargo.toml` ends with `[workspace]` to exclude itself from the parent `evcxr-typst` workspace, keeping tooling-only deps out of the main lockfile.
+- Determinism is a contract: same input bytes → byte-identical output. Enforced via golden tests under `tools/rbe-port/tests/golden/<case>/{input.md,expected.typ}` with literal expected files (no snapshot library — diffs are eyeball-reviewed in PRs). Required golden cases listed in `docs/design/rbe-porter.md` § "Required golden cases".
+- `--check` mode re-converts and diffs against on-disk output; CI runs this against a vendored input snapshot to detect drift.
+- Manifest format (`<output-dir>/manifest.json`): captures `rbe_commit_sha`, `ported_at`, per-file SHA-256 of input + output, snippet-kind detected.
+- Code-block tag mapping per `docs/design/rbe-porter.md` § "Code-block tag matrix": `rust`/`rust,editable` → snippet-detection; `rust,ignore`/`rust,no_run` → `options.skip-eval`; `rust,compile_fail` → `options.expected-error`; `rust,should_panic` → `options.expected-panic`; `text`/`bash`/`sh`/`toml` → Typst `#raw(block: true, ...)`. New `options` keys are additive per D-019 — no schema-version bump.
+- Snippet-kind detection (`SyncMain`, `AsyncMain`, `AsyncRuntimeMain`, `Plain`, `MultipleMain`, `Unparseable`) maps to `rust-main` / `rust` per `rbe-porter.md` § "Snippet detection". `#[tokio::main]` snippets are emitted verbatim — evcxr's auto-tokio handles them at eval time.
+
+**Rationale:** rust-by-example markdown is straightforward — fenced code blocks plus light prose syntax. A markdown AST library would force enumerating dozens of event types we never use, and the round-trip "events back to markdown then to typst" is its own bug surface. The scanner is estimated 200–400 lines of focused code. `syn` IS load-bearing for snippet detection (no regex hack survives `#[tokio::main] async fn main()`); we don't substitute it. Workspace isolation prevents tooling deps from polluting `evcxr-typst`'s lockfile, matching the pattern proposed for `crates/evcxr-typst-analyzer/` in `docs/design/wasm-plugin-analyzer.md` § "Mechanism". Literal golden files over snapshot testing trades convenience for review discipline — `INSTA_UPDATE=1` invites unreviewed drift.
+
+**Consequences:** T-B01's "Done when" expands to include a working scanner + the 10 required golden cases. `pulldown-cmark` and friends remain documented escalation paths if the scanner proves insufficient on real chapters. New `options` keys (`skip-eval`, `expected-error`, `expected-panic`, `auto-call`, `auto-call-await`) get added to `docs/design/package-api.md` § 5.1 when T-B01 ships; CLI must honor them in T-I03 onward.
+
+**Reference:** `docs/design/rbe-porter.md`; `docs/tracks/rust-by-example-port.md`; D-022 (track-level decision); D-019 (additive `options` policy).
