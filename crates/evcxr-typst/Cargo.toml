@@ -4,7 +4,7 @@ version = "0.0.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Evaluate Rust snippets in Typst documents via evcxr"
-repository = "https://github.com/Mossa/evcxr-typst"
+repository = "https://github.com/CGMossa/evcxr-typst"
 publish = false
 
 [[bin]]
