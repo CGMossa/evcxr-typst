@@ -233,11 +233,12 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ### T-H03 · Rename `show:` kwarg in package API (Typst reserved word)
 
-- **Status:** open
+- **Status:** done · D-021 · `packages/evcxr/lib.typ` (kwarg renamed `show:` → `render:`, `default-show:` → `default-render:`); `docs/design/{package-api,examples/index}.md` (full rename sweep); `docs/DECISIONS.md` (D-021 added)
 - **Phase:** any
 - **Depends on:** —
 - **Briefing:** `packages/evcxr/lib.typ` currently declares `#let rust(src, id: none, deps: (), show: auto, ...)`. Typst rejects this with "keyword `show` is not allowed as an identifier" — `show` is reserved (the rule selector). Discovered while smoke-testing `typst compile --root . examples/hello/main.typ` during T-H01/T-H04 cleanup. Need to (1) pick a non-reserved name, candidates: `display`, `output`, `mode`, `show_` (Typst's own suggestion); (2) update D-012 in `docs/DECISIONS.md` and `docs/design/package-api.md` to record the rename; (3) update `examples/hello/main.typ` and the `setup(default-show: ...)` kwarg accordingly (likely also reserved-adjacent but currently parses). Not blocking on the CLI side but blocks any actual `typst compile` of the hello example.
 - **Done when:** `typst compile --root . examples/hello/main.typ` parses past the `lib.typ` import; design docs updated; decision recorded.
+- **Resolution:** Renamed `show:` → `render:` (and `default-show:` → `default-render:` for symmetry). `render` won over `display`/`output`/`mode`/`show_` because it has no Typst reserved-keyword collision, no overlap with the `rust-display()` function name, no overlap with the kwarg's `"output"` value, and reads naturally with every value choice (`render: "both"`, `render: auto`). Metadata schema field correspondingly renamed `<evcxr-snippet>.options.show` → `.options.render`; not a versioned-schema bump because schema is pre-1.0 (D-019). D-021 amends D-012.
 
 ---
 
