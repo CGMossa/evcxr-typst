@@ -31,7 +31,7 @@ The package extracts the underlying source via `src.text` when given a `raw` ele
 
 ### 1.2 Configuration lives in a Typst `state`, set via `setup()`
 
-Per-call kwargs cover the common case (`id:`, `deps:`, `show:`, `caption:`). Document-wide knobs (cache directory hint, default placeholder style, default show mode) live in a state variable and are seeded by an optional `setup()` call at document top:
+Per-call kwargs cover the common case (`id:`, `deps:`, `render:`, `caption:`). Document-wide knobs (cache directory hint, default placeholder style, default show mode) live in a state variable and are seeded by an optional `setup()` call at document top:
 
 ```typ
 #import "@preview/evcxr:0.1.0" as evcxr
@@ -39,7 +39,7 @@ Per-call kwargs cover the common case (`id:`, `deps:`, `show:`, `caption:`). Doc
   show-source: true,
   source-style: (fill: luma(245), inset: 6pt, radius: 3pt),
   placeholder-style: (stroke: 0.5pt + red, inset: 4pt),
-  default-show: "both",  // "source" | "output" | "both" | "output-only"
+  default-render: "both",  // "source" | "output" | "both" | "output-only"
 )
 ```
 
@@ -67,7 +67,7 @@ All functions take an optional `id: none` and `deps: ()` (covered in §4). They 
   src,                    // raw block (preferred) or string
   id: none,               // override auto ID
   deps: (),               // array of dep handles or label strings
-  show: auto,             // "source" | "output" | "both" | "output-only" | auto
+  render: auto,             // "source" | "output" | "both" | "output-only" | auto
   caption: none,          // figure caption; if set, wraps in figure
   source-lang: "rust",    // for the rendered source block
   timeout: auto,          // per-snippet override; see § 2.8
@@ -175,11 +175,11 @@ Three return modes (resolved in D-015):
   path: none,             // local path (resolved relative to main.typ)
   package: none,          // rename: depend on `serde` but call it `s`
   id: none,
-  show: false,            // by default deps render nothing
+  render: false,            // by default deps render nothing
 ) -> content
 ```
 
-Emits an `<evcxr-dep>` metadata marker at its document position. The CLI pre-collects all `<evcxr-dep>` markers, resolves them in document order, and emits a `:dep` directive into evcxr before any snippet that comes after the marker (see §4 on ordering and D-013 on inline-anywhere placement). Renders nothing by default; `show: true` renders a small "depends on: serde 1.0" tag for documentation-style writing.
+Emits an `<evcxr-dep>` metadata marker at its document position. The CLI pre-collects all `<evcxr-dep>` markers, resolves them in document order, and emits a `:dep` directive into evcxr before any snippet that comes after the marker (see §4 on ordering and D-013 on inline-anywhere placement). Renders nothing by default; `render: true` renders a small "depends on: serde 1.0" tag for documentation-style writing.
 
 `version` is positional too — `dep("regex", "1")` is the canonical form used throughout the gallery.
 
@@ -287,7 +287,7 @@ Per D-004, `typst compile main.typ` without running the CLI must succeed and pro
 | `rust-display` | A placeholder box sized to a default 4cm × 3cm with a Unicode picture-frame glyph (U+1F5BC) and the snippet id. |
 | `rust-hidden` | Nothing (same as success). |
 | `rust-data` | No sidecar yet → returns `fallback:` value (default empty dict), no visible artifact. Errored snippet → returns `none` and emits a sibling error box (see D-015). |
-| `dep` | Nothing by default; with `show: true`, "depends on: <spec>" tag (no fallback distinction needed). |
+| `dep` | Nothing by default; with `render: true`, "depends on: <spec>" tag (no fallback distinction needed). |
 
 ### 3.2 Placeholder box anatomy
 
@@ -350,7 +350,7 @@ Two `dep()` calls naming the same crate with conflicting versions are a **CLI-le
 2. The user wants belt-and-suspenders documentation of intent.
 
 ```typ
-#let serde-dep = dep("serde", features: ("derive",), show: false)
+#let serde-dep = dep("serde", features: ("derive",), render: false)
 
 // … many pages later …
 
@@ -439,7 +439,7 @@ Validated against the example gallery in `docs/design/examples/` (all 8 `.typ` f
 2. **Stdout-only: `rust-out`.** Brief enough to live inline ("The answer is `#rust-out(...)`."), and the gallery already reads cleanly with it (`a-hello.typ`, `h-mini-report.typ` § 5). `rust-print` is misleading because we also capture `eprintln!`/`panic` text; `rust-stdout` is precise but ugly inline.
 3. **Display-only: `rust-display`.** Matches evcxr's `EVCXR_BEGIN_CONTENT` vocabulary and Jupyter conventions. `rust-show` would clash semantically with Typst's `show` rule. `rust-render` is vague. Gallery `d-image-output.typ` and `h-mini-report.typ` § 4 read naturally.
 4. **Evaluate-and-render-nothing: `rust-hidden`.** Describes the *rendering* (no visible output) rather than guessing intent. `rust-setup` would mislead when the snippet is intentionally suppressing visible side-effects (e.g. a fixture that already happened); `rust-quiet` is unclear to non-Jupyter users. Gallery `b-struct-across-snippets.typ`, `c-module-across-snippets.typ`, and `h-mini-report.typ` § 1 use it for setup, definition, and corpus blocks alike — `rust-hidden` covers all three.
-5. **Default `show:` for `rust(...)`: `"both"` (source + output).** Matches Jupyter cell convention and matches every gallery use of `#rust(...)` (`a-hello.typ`, `b-…`, `e-cratesio-dep.typ`, `f-async-tokio.typ`, `g-error-case.typ`, `h-mini-report.typ` § 2). Output-only as the default would require explicit `show: "both"` on every tutorial snippet — backwards. Configurable via `setup(default-show: "output")` for docs-focused authors.
+5. **Default `render:` for `rust(...)`: `"both"` (source + output).** Matches Jupyter cell convention and matches every gallery use of `#rust(...)` (`a-hello.typ`, `b-…`, `e-cratesio-dep.typ`, `f-async-tokio.typ`, `g-error-case.typ`, `h-mini-report.typ` § 2). Output-only as the default would require explicit `render: "both"` on every tutorial snippet — backwards. Configurable via `setup(default-render: "output")` for docs-focused authors.
 6. **`dep` API: positional `(name, version?)` plus kwargs, with TOML-fragment escape hatch.** Final shape:
    - `dep(name)` — latest.
    - `dep(name, version)` — pin (gallery's idiom: `#dep("regex", "1")`).

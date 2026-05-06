@@ -1,11 +1,12 @@
 // evcxr · embed Rust evaluation in Typst documents
 //
 // Public API per:
-//   D-012  function names & default show:
+//   D-012  function names & default render mode (originally show:)
 //   D-013  dep() inline-anywhere
 //   D-015  rust-data() failure shape
 //   D-017  per-snippet timeout: kwarg
 //   D-019  schema versioning + min-cli mechanism
+//   D-021  rename show: → render: (Typst reserves `show`)
 // Spec lives at docs/design/package-api.md (in the source repo, not shipped).
 //
 // Status: scaffolding. Functions emit metadata markers and render fallback
@@ -28,14 +29,14 @@
 
 #let setup(
   min-cli: none,
-  default-show: "both",
+  default-render: "both",
   fallback: auto,
 ) = {
   [#metadata((
     v: _v,
     kind: "setup",
     min-cli: min-cli,
-    default-show: default-show,
+    default-render: default-render,
     fallback: fallback,
   ))<evcxr-setup>]
   if min-cli != none {
@@ -43,9 +44,9 @@
   }
 }
 
-#let rust(src, id: none, deps: (), show: auto, timeout: auto, caption: none) = {
+#let rust(src, id: none, deps: (), render: auto, timeout: auto, caption: none) = {
   _emit-snippet("rust", src, id, deps, (
-    show: show, timeout: timeout, caption: caption,
+    render: render, timeout: timeout, caption: caption,
   ))
   fallback.placeholder("rust", id)
 }
