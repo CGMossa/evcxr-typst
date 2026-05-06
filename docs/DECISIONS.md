@@ -296,3 +296,17 @@ The cache directory sits at the workspace level (alongside the `.typ` source), g
 **Consequences:** Each schema doc (`package-api.md` § 5, `errors.md` § 2, `cache.md` § "Cache layout") gains a one-line link to `schema-versioning.md` rather than restating the policy. The package picks up `evcxr.max-supported-error-v` as a constant for the unknown-`v` error message. CLIs supporting older packages must keep older `v: N-1` writers around for one major — bounded cost. Releases now have a checklist item: bump the relevant `v`, update `min-cli:` if applicable, log the cache migration in release notes.
 
 **Reference:** `docs/design/schema-versioning.md` (canonical policy, all seven question areas covered).
+
+---
+
+## D-020 — Semantic features arrive via CLI sidecars first; WASM plugin is a deferred superset
+
+**Status:** accepted · 2026-05-06
+
+**Decision:** The "semantic Typst" feature set (`type-of`, `signature-of`, `kind-of`, `doc-of`, `items-table`, `ref`, `diagnostics-of`) ships first via CLI-emitted `<id>.semantic.cbor` sidecars consumed by the Typst package, exactly the same plumbing pattern as `rust-data` (D-015). The WASM-plugin path (`crates/evcxr-typst-analyzer/`) — analysed in `docs/design/wasm-plugin-analyzer.md` — is a strict superset that brings the same features to bare `typst compile` (no CLI run); it is **deferred** to side-track phase S4 and only revisited after S1–S3 have shipped and we have data on how often authors hit the "no CLI run yet, want semantic" case.
+
+**Rationale:** evcxr's `CommandContext` already wraps a `RustAnalyzer` for its own type-inference and completion paths (`evcxr/src/rust_analyzer.rs`). The data needed for S1–S3 is largely already computed; we surface it. That's a small, low-risk slice that delivers most of the user-visible value of the track. The WASM-plugin path adds a multi-MB binary, fork maintenance, a stdlib summary build pipeline, and a fifth versioned interface — non-trivial cost for an incremental UX bump on a fallback path. Re-validating the cost/value once S1–S3 ship is honest; committing now would over-invest.
+
+**Consequences:** The semantic-typst track is now formally a side track (`docs/tracks/semantic-typst.md`), with tasks T-S01..T-S04 in the side-tracks section of `BACKLOG.md`. T-D11 in the main backlog is rewritten to point at S4 specifically. The `<id>.semantic.cbor` sidecar is added as the fifth versioned interface in `docs/design/schema-versioning.md` when S1 ships.
+
+**Reference:** `docs/tracks/semantic-typst.md`; `docs/design/wasm-plugin-analyzer.md`; D-015 (sidecar fallback model precedent); D-019 (schema versioning policy).

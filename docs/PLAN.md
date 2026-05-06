@@ -67,6 +67,14 @@ The "interactive / progressive" part.
 - Pipe evcxr's tab completions through to a Typst LSP extension. Probably pricy for the value; revisit only if Phase 4 ships and people use it.
 - Snapshot/restore in `EvalContext` so editing a middle snippet doesn't require re-eval-from-zero. Requires upstream evcxr changes; only worth it if Phase 3 measurements show this is the bottleneck.
 
+## Side tracks (off main path)
+
+Some valuable directions are designed but explicitly **not on the critical path**. They're documented under `docs/tracks/` with their own phased plans, and never block the main Phase 1–4 journey. Currently:
+
+- **Semantic Typst** ([`tracks/semantic-typst.md`](tracks/semantic-typst.md)) — surface rust-analyzer's view of snippets (types, signatures, docs, diagnostics, refs) into the document, enabling literate programming with semantic awareness. Ships in four sub-phases S1–S4 (T-S01..T-S04 in `BACKLOG.md`); the first three are CLI-sidecar slices that piggy-back on the main-plan plumbing, S4 is the bigger WASM-plugin investment and is decision-gated. See D-020.
+
+If a main-plan task and a side-track task are both open, the main task wins.
+
 ## Non-goals (call them out so we don't drift)
 
 - Not a replacement for Jupyter — if you want a notebook, use evcxr's Jupyter kernel directly.

@@ -1,6 +1,8 @@
 # Architectural option: a Typst WASM plugin built on rust-analyzer
 
-Exploratory design. Does **not** supersede the prequery architecture (D-001) — it is a candidate companion or follow-on. Decide whether to bring this into the v0/v1 plan after reading.
+Exploratory design. Does **not** supersede the prequery architecture (D-001) — it is a candidate companion or follow-on.
+
+> **Now subsumed by the Semantic Typst side track.** This document covers the WASM-plugin path specifically (option B / track phase **S4** in [`../tracks/semantic-typst.md`](../tracks/semantic-typst.md)). The semantic-typst track sets up cheaper non-WASM precursors (S1–S3) that ship the same user-facing features via CLI sidecars; S4 is the bigger investment that brings them to bare `typst compile`. Read the track's overview first; this file remains the canonical analysis of the plugin path itself.
 
 ## The seed
 

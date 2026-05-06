@@ -49,13 +49,11 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 - **Done when:** the file exists; covers cache scope, watch-set discovery, dep visibility across files, entry-file selection on the CLI.
 - **Resolution:** v0 = single entry file; cache rooted at entry-file parent (CAS shared across entry files in the same workspace, id-addressed view per entry); discovery = BFS from entry parsing local `#import`/`#include` via `typst-syntax`, with `evcxr-typst.toml` as an opt-in override; global snippet order is `(file_seq, doc_order_within_file)`; `dep()` visibility is global by document order; ID collisions are project-wide (default→suffix, explicit→hard error); watch set is the union of all member files, recomputed each cycle. See `docs/design/multi-file.md` and D-018.
 
-### T-D11 · WASM analyzer plugin (architectural option, deferred)
+### T-D11 · WASM analyzer plugin (folded into side-track S4)
 
-- **Status:** open · documented-only — see `docs/design/wasm-plugin-analyzer.md`
-- **Phase:** 5 (or 6) — only triggered if we decide to bring it into the active plan
-- **Depends on:** T-I06 ideally (so the CLI path is shipping value first)
-- **Briefing:** `cgmossa/rust-analyzer` wasm branch (commit 8a79b99) compiles rust-analyzer to WebAssembly. Combined with Typst's WASM-plugin protocol, this would let the Typst package itself do in-document syntax/type analysis of snippets — useful as a fallback-path UX upgrade when no CLI run has happened. It is **not** a replacement for the prequery CLI: WASM has no rustc, no `:dep`, no execution. Read the analysis doc; if we decide to pull this forward into the active plan, this task becomes "design the plugin API, items-summary schema, and stdlib-bundle pipeline" and gets concrete output requirements. Until then it stays documented-but-deferred.
-- **Done when:** explicit decision to ship (becomes a real Phase 5 task with implementation backlog) or explicit decision to drop (closed as `won't-do`).
+- **Status:** superseded by **T-S04** in the Side tracks section · D-020
+- **Phase:** n/a (off main path)
+- **Notes:** Originally framed as a Phase 5 add-on to the main plan. After expanding the design we recognised it's part of a broader "semantic Typst" feature surface whose first three slices (type-of / signature-of / docs / items-table / refs / diagnostics) can ship via CLI sidecars without the WASM plugin investment. The plugin specifically remains the bigger fourth slice. See `docs/tracks/semantic-typst.md` and T-S04.
 
 ---
 
@@ -232,6 +230,54 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 - **Phase:** any
 - **Depends on:** T-I01
 - **Briefing:** Mirror evcxr's `rustfmt.toml` so we stay style-aligned with upstream.
+
+---
+
+## Side tracks
+
+> Off main critical path. See `docs/tracks/README.md` for the concept and `docs/tracks/semantic-typst.md` for the only current track. **Side-track tasks are interleaved with main work, never blocking.** If a main task and a side-track task are both open, the main task wins.
+
+### T-S00 · Semantic Typst — track meta-doc
+
+- **Status:** done · `docs/tracks/{README.md,semantic-typst.md}` · D-020
+- **Track:** Semantic Typst
+- **Depends on:** —
+- **Resolution:** Track designed end-to-end; vision, target UX, three architecture options (CLI-sidecars / WASM-plugin / both), phased plan S1..S4, sidecar schema sketch, scope-explicit non-goals. D-020 records the "CLI sidecars first" policy. Scaffolding for picking up the work: implementation tasks T-S01..T-S04 below.
+
+### T-S01 · CLI semantic sidecars: `type-of`, `signature-of`, `kind-of`
+
+- **Status:** open
+- **Track:** Semantic Typst
+- **Depends on:** main-plan **T-I03** (sidecar plumbing must exist) · D-020
+- **Reference reads:** `docs/tracks/semantic-typst.md` (whole file), `/Users/elea/Documents/GitHub/evcxr/evcxr/src/rust_analyzer.rs` (the source of the data), `/Users/elea/Documents/GitHub/evcxr/evcxr/src/eval_context.rs` (search for `analyzer.` to see how it's accessed today)
+- **Briefing:** After each snippet the CLI evaluates, query the embedded `RustAnalyzer` for declared items and committed bindings; serialize to CBOR and write `<id>.semantic.cbor` per the schema sketched in `tracks/semantic-typst.md`. Add Typst-package functions `type-of(name)`, `signature-of(name)`, `kind-of(name)` reading the sidecar; `none`/placeholder fallback when missing (D-015 model). The `<id>.semantic.cbor` file becomes the project's fifth versioned interface — register it in `docs/design/schema-versioning.md` § "tracked interfaces" and start it at `v: 1`.
+- **Done when:** the gallery `b-struct-across-snippets.typ` example renders inline `type-of` / `signature-of` references that resolve to actual rust-analyzer-emitted strings after `evcxr-typst run --allow-eval`. Bare `typst compile` of the same doc still succeeds, with placeholder boxes where references would resolve.
+
+### T-S02 · Semantic sidecars: `doc-of`, `items-table`, `ref`
+
+- **Status:** blocked
+- **Track:** Semantic Typst
+- **Depends on:** T-S01
+- **Reference reads:** T-S01's outputs; `docs/tracks/semantic-typst.md` § "Risks" (rustdoc → Typst conversion footgun)
+- **Briefing:** Extend the sidecar schema to carry rustdoc comments and item spans. Add `doc-of(name)` (best-effort markdown-ish content), `items-table(at: id, only-kinds: ...)` (a styled table of items in scope at the named snippet), `ref(name)` (an inline hyperlink to the snippet that defined `name` — needs snippets to emit Typst `<label>`s; T-S02 may need a small package-side mechanism for that). Schema version bumped if and only if this addition breaks T-S01 readers (it's purely additive, so no bump per D-019).
+- **Done when:** a 200-word "narrative doc with semantic prose" example exists at `examples/semantic-narrative/main.typ` and renders with all three new functions populated.
+
+### T-S03 · CLI-side rust-analyzer diagnostics sidecar
+
+- **Status:** blocked
+- **Track:** Semantic Typst
+- **Depends on:** T-S01 · main-plan **T-I07** (pretty errors should land first so the rendering style is consistent)
+- **Briefing:** Run `RustAnalyzer::diagnostics` per snippet alongside `execute`; serialize to a separate `<id>.diagnostics.cbor` (or extend the semantic sidecar — TBD; document the choice when implementing). Add `evcxr.diagnostics-of(snippet-id)` to the package, rendering using the same styling as T-I07's compile-error box. This complements but does not replace rustc errors: rust-analyzer surfaces some issues earlier, rustc surfaces others (especially borrowck and codegen edge cases) only at compile time; both can coexist for a single snippet, ranked together.
+- **Done when:** snippet `g-error-case.typ` shows both an analyzer-level diagnostic and the rustc compile error in a stable order; the doc explains the difference in a one-line note above the box.
+
+### T-S04 · WASM analyzer plugin (the bigger one)
+
+- **Status:** blocked-on-decision
+- **Track:** Semantic Typst
+- **Depends on:** T-S01..T-S03 shipped (to validate the user-facing surface) · main-plan **T-I06** shipped (to keep the plugin work parallel to a safe, shipping CLI baseline)
+- **Reference reads:** `docs/design/wasm-plugin-analyzer.md` (the full analysis), `docs/tracks/semantic-typst.md` § "Architecture options"
+- **Briefing:** Build `crates/evcxr-typst-analyzer/` as a Typst plugin cdylib, using `ra_ap_*` patched per the `cgmossa/rust-analyzer` `wasm` branch. Bundle a precomputed stdlib summary. Define an items-summary input schema. Wire `packages/evcxr/lib.typ` to prefer the plugin when present and fall back to the CLI-sidecar path from T-S01..T-S03. Concrete sub-tasks (build pipeline, stdlib bundle generation, plugin API, items-summary schema, package wiring, integration tests) are deferred until this task is unblocked by an explicit decision to ship.
+- **Done when:** explicit decision to ship → expanded into a sub-backlog of concrete implementation steps. Or explicit decision to drop → closed as `won't-do` and the `wasm-plugin-analyzer.md` doc retained as research-only.
 
 ---
 
