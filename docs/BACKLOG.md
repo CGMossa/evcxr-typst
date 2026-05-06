@@ -49,6 +49,16 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 - **Done when:** the file exists; covers cache scope, watch-set discovery, dep visibility across files, entry-file selection on the CLI.
 - **Resolution:** v0 = single entry file; cache rooted at entry-file parent (CAS shared across entry files in the same workspace, id-addressed view per entry); discovery = BFS from entry parsing local `#import`/`#include` via `typst-syntax`, with `evcxr-typst.toml` as an opt-in override; global snippet order is `(file_seq, doc_order_within_file)`; `dep()` visibility is global by document order; ID collisions are project-wide (default→suffix, explicit→hard error); watch set is the union of all member files, recomputed each cycle. See `docs/design/multi-file.md` and D-018.
 
+### T-D11 · WASM analyzer plugin (architectural option, deferred)
+
+- **Status:** open · documented-only — see `docs/design/wasm-plugin-analyzer.md`
+- **Phase:** 5 (or 6) — only triggered if we decide to bring it into the active plan
+- **Depends on:** T-I06 ideally (so the CLI path is shipping value first)
+- **Briefing:** `cgmossa/rust-analyzer` wasm branch (commit 8a79b99) compiles rust-analyzer to WebAssembly. Combined with Typst's WASM-plugin protocol, this would let the Typst package itself do in-document syntax/type analysis of snippets — useful as a fallback-path UX upgrade when no CLI run has happened. It is **not** a replacement for the prequery CLI: WASM has no rustc, no `:dep`, no execution. Read the analysis doc; if we decide to pull this forward into the active plan, this task becomes "design the plugin API, items-summary schema, and stdlib-bundle pipeline" and gets concrete output requirements. Until then it stays documented-but-deferred.
+- **Done when:** explicit decision to ship (becomes a real Phase 5 task with implementation backlog) or explicit decision to drop (closed as `won't-do`).
+
+---
+
 ### T-D10 · Schema versioning policy
 
 - **Status:** done · `docs/design/schema-versioning.md` · D-019
