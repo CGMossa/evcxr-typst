@@ -38,12 +38,17 @@ The Typst package emits, at the location of each snippet, a `metadata((...))<evc
 {
   "v": 1,
   "id": "<stable id>",
-  "kind": "rust" | "rust-out" | "rust-display" | "rust-html" | "rust-data",
+  "kind": "rust" | "rust-out" | "rust-display" | "rust-hidden" | "rust-data",
   "src": "<the rust source>",
-  "deps_active_at": "<:dep state hash>",
+  "deps": ["<explicit-dep-id>", "..."],
+  "options": { "prefer": "image/png", "format": "auto", "...": "..." },
   "loc": { "doc_order": 7 }
 }
 ```
+
+`deps` lists explicit dep ids passed via the `deps:` kwarg — implicit document-order deps are not in the metadata; the CLI infers them from `<evcxr-dep>` markers in document order. `options` is a forward-compatible bag of kind-specific kwargs; older CLIs ignore unknown keys. Exact schema and field semantics live in `docs/design/package-api.md` § 5.
+
+A parallel `<evcxr-dep>` marker carries dep specifications (see `docs/design/package-api.md` § 5.2).
 
 `typst query --field value <doc> '<evcxr-snippet>'` returns these in document order, with their physical location. The CLI consumes that, drives evcxr, and writes sidecars keyed by `id`.
 
@@ -66,15 +71,18 @@ Quick map of what falls out of evcxr today:
 
 | Rust construct | Persists across snippets? | Notes |
 |---|---|---|
-| `let` bindings | yes | Can't reference previous bindings (borrow-checker / `'static`); see evcxr's `COMMON.md` "References". |
-| `fn` definitions | yes | Stored in `committed_state.items`. |
-| `struct`/`enum`/`trait`/`impl` | yes | Same. |
-| `mod foo { … }` | yes | |
+| `let` bindings | yes, **unless** an intervening snippet panics — see D-011 | Can't reference previous bindings (borrow-checker / `'static`); see evcxr's `COMMON.md` "References". |
+| `fn` definitions | yes | Stored in `committed_state.items`; survives child respawn (rebuilt from items). |
+| `struct`/`enum`/`trait`/`impl` | yes | Same. `impl` blocks attach to the previously-named item — see snippet-semantics.md § Rules.1. |
+| `mod foo { … }` (inline) | yes | The canonical form — see D-008. |
+| `mod foo;` (file-based) | **rejected** — see D-008 | Resolves to evcxr's tmpdir, not the document's directory. Use inline modules or `:dep`. |
 | `use foo::bar;` | yes | Use-trees are merged across snippets; see `evcxr/src/use_trees.rs`. |
 | Macros | importing from external crates: **no** (documented limitation). Local `macro_rules!`: yes. |
 | Lifetimes / borrows across snippets | restricted | Persisted vars must be `'static`-ish. Workarounds: scope-limit, `Box::leak`. |
 
 This is critical UX: a writer should be able to "define a struct in one snippet, use it three pages later" — and that has to Just Work.
+
+The full construct matrix and rules live in `docs/design/snippet-semantics.md`.
 
 ## MIME → Typst output mapping
 
@@ -90,6 +98,7 @@ evcxr's display protocol is line-based: code emits `EVCXR_BEGIN_CONTENT <mime>\n
 | `application/json` | `<id>.json` | `json("…")` returns dict/array |
 | `application/cbor` | `<id>.cbor` | `cbor("…")` returns dict/array |
 | (anything else) | `<id>.<ext>` + `<id>.meta.json` | raw box with mime stamped on |
+| **errors** (compile/panic/timeout/dep-resolution) | `<id>.error.json` | styled error box; takes precedence over other sidecars. Schema: `docs/design/errors.md` § 2. |
 
 Stdout that is *not* wrapped in BEGIN/END is the snippet's plain text output. A snippet that produces both display objects and plain stdout writes both `<id>.txt` and `<id>.png` (etc.), and the Typst package decides which to surface based on the called function (`rust` vs `rust-out` vs `rust-display`).
 
@@ -98,9 +107,7 @@ Stdout that is *not* wrapped in BEGIN/END is the snippet's plain text output. A 
 Two layers, both essential, both already partly built elsewhere:
 
 1. **rustc artifact cache** — evcxr already has this (`:cache <MB>` directive). We turn it on by default with a sane budget. This is what makes "edit one snippet" cheap — the dep crates are already compiled.
-2. **Snippet output cache** — ours to build. Key = `blake3(snippet src) ⊕ blake3(active :dep state) ⊕ snippet doc_order ⊕ blake3(committed_items_summary_at_this_point)`. Hit means we don't re-eval; we just leave the existing sidecar in place. Miss means re-eval and rewrite sidecars.
-
-The `committed_items_summary_at_this_point` is the subtle bit: a snippet's output can change because *an earlier snippet* changed (it now defines `Foo` differently). The simplest correct hash is the ordered concatenation of source of all snippets up to and including this one — pessimistic but trivially correct. Detail in `docs/design/cache.md`.
+2. **Snippet output cache** — ours to build. Cache key hashes snippet src + a Merkle chain over prior snippets + active deps + evcxr/rustc/target/env. Storage uses content-addressed CAS at `.evcxr-typst-cache/v1/cas/<XX>/<full-key>/` with a separate id-addressed view (hardlinks) that the Typst package reads at render time. The package never sees the CAS. CAS-by-key gives us free dedup across documents and easy GC. Detail and exact formula in `docs/design/cache.md`; locked in by D-010.
 
 ## Watch loop
 

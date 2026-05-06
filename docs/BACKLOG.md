@@ -10,9 +10,58 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ## Phase 0 — design
 
-### T-D01 · Snippet semantics & dependency model
+> All six T-D0x tasks landed in commit 954e3a2 as parallel agent drafts and were reconciled into ARCHITECTURE.md / DECISIONS.md in a follow-up commit. They appear in **Done** at the bottom. The follow-up reconciliation tasks T-D07–T-D10 below cover the open questions that surfaced.
+
+### T-D07 · Reconcile open questions left by Phase-0 drafts
 
 - **Status:** open
+- **Phase:** 0 (design follow-up)
+- **Depends on:** —
+- **Reference reads:** all of `docs/design/*.md` and `docs/DECISIONS.md` D-007..D-011
+- **Briefing:** Resolve the explicit open questions and bikesheds left by the parallel Phase-0 drafts. Concrete punch list:
+  - `package-api.md` § 7 bikesheds 1–6: pick names (`rust` vs `eval`, `rust-out` vs `rust-stdout`, `rust-display` vs `rust-show` vs `rust-render`, `rust-hidden` vs `rust-setup`, `rust(...)` default `show:`, `dep` overload). Read at least three gallery examples and check the chosen names read naturally in flow.
+  - `snippet-semantics.md` open Q1: should `dep()` be document-level (a top-of-document prelude block) or remain inline-anywhere? Resolve in coordination with T-D03's chosen API.
+  - `errors.md` open Q1: where does the snippet-id tag live (upstream patch to evcxr's `CodeKind::OriginalUserCode` vs. a parallel offset map maintained by `evcxr-typst`)? Decide; if upstream patch, add it as a separate evcxr-side task.
+  - `errors.md` open Q2: `rust-data()` failure-return shape (`none` vs sentinel dict vs hard fail). Decide together with package-api `rust-data` semantics.
+  - `watch-loop.md` open Q1: skip-sidecar-write when bytes are unchanged? Reconcile with cache.md.
+  - `watch-loop.md` open Q2: multi-`.typ`-file projects with `#import` / `#include` — does `typst query` already report the imported-file set, or do we have to walk imports ourselves?
+- **Output:** Updates to the relevant design files (in place) plus a new `docs/DECISIONS.md` entry per resolved question. Mark each bullet above with the resolution.
+- **Done when:** every bullet has an explicit resolution; new decision entries added; design-file open-question sections updated to "resolved (D-xxx)".
+
+### T-D08 · Decide on per-snippet `timeout:` kwarg in the package API
+
+- **Status:** open
+- **Phase:** 0 (design follow-up)
+- **Depends on:** T-D07
+- **Reference reads:** `docs/DECISIONS.md` D-009; `docs/design/errors.md` § 1.e; `docs/design/package-api.md` § 6
+- **Briefing:** D-009 deferred per-snippet timeout overrides because evcxr's child-cancellation semantics weren't clear. Read `evcxr/src/eval_context.rs` for what `execute` actually does on cancellation; decide whether `rust(..., timeout: 5min)` is shippable in v0 or stays deferred. Either way, document the decision and update the `errors.md` RECON-T-D03 flag.
+- **Done when:** decision recorded as a new D-xxx entry; `errors.md` flag resolved; `package-api.md` § 6 updated accordingly.
+
+### T-D09 · Multi-document and multi-file project layout
+
+- **Status:** open
+- **Phase:** 0 (design follow-up)
+- **Depends on:** T-D07
+- **Reference reads:** `docs/design/watch-loop.md` open Q2; `docs/design/cache.md` § "Cache layout on disk" (cache lives at workspace level)
+- **Briefing:** A real Typst project rarely lives in one `.typ` file. Designing for `#import "chapter1.typ"` etc.: where does the cache live, how do snippets in `chapter1.typ` reach `dep()`s declared in `main.typ`, what's the watch-set, what's the run command (one `main.typ` is the entry, dependent files are auto-discovered)? Probably v0 supports a single entry file + auto-discovered imports, multi-entry-file projects deferred.
+- **Output:** new `docs/design/multi-file.md`.
+- **Done when:** the file exists; covers cache scope, watch-set discovery, dep visibility across files, entry-file selection on the CLI.
+
+### T-D10 · Schema versioning policy
+
+- **Status:** open
+- **Phase:** 0 (design follow-up)
+- **Depends on:** —
+- **Reference reads:** ARCHITECTURE.md § "The metadata contract"; package-api.md § 5; errors.md § 2; cache.md § "Cache layout"
+- **Briefing:** Three `v` fields exist in the wild: `<evcxr-snippet>.v`, `<evcxr-dep>.v`, `<id>.error.json.v`. Plus a CAS layout `v1/`. Document policy: when do we bump? what's backward-compat strategy? what's the minimum-CLI-version-required mechanism so a Typst package release can refuse an old CLI cleanly?
+- **Output:** new `docs/design/schema-versioning.md` (~1 page).
+- **Done when:** the file exists; covers all four version fields and the CLI/package compatibility check.
+
+---
+
+### T-D01 · Snippet semantics & dependency model
+
+- **Status:** done · 954e3a2 · `docs/design/snippet-semantics.md`
 - **Phase:** 0 (design)
 - **Depends on:** —
 - **Reference reads:**
@@ -28,7 +77,7 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ### T-D02 · Example gallery design
 
-- **Status:** open
+- **Status:** done · 954e3a2 · `docs/design/examples/` (8 `.typ` + `index.md`)
 - **Phase:** 0 (design)
 - **Depends on:** —
 - **Reference reads:**
@@ -43,7 +92,7 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ### T-D03 · Typst package API surface
 
-- **Status:** open
+- **Status:** done · 954e3a2 · `docs/design/package-api.md` (open names bikeshed → T-D07)
 - **Phase:** 0 (design)
 - **Depends on:** T-D02 (need example syntax to validate naming)
 - **Reference reads:**
@@ -59,7 +108,7 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ### T-D04 · Snippet identity & cache key
 
-- **Status:** open
+- **Status:** done · 954e3a2 · `docs/design/snippet-identity.md`, `docs/design/cache.md` · D-005 superseded by D-007; D-010 added
 - **Phase:** 0 (design)
 - **Depends on:** —
 - **Reference reads:**
@@ -73,7 +122,7 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ### T-D05 · Watch loop & change classification
 
-- **Status:** open
+- **Status:** done · 954e3a2 · `docs/design/watch-loop.md` (multi-file Q → T-D09; skip-on-unchanged Q → T-D07)
 - **Phase:** 0 (design)
 - **Depends on:** T-D04 (cache key feeds into the change classification)
 - **Reference reads:**
@@ -88,7 +137,7 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ### T-D06 · Error reporting & diagnostic plumbing
 
-- **Status:** open
+- **Status:** done · 954e3a2 · `docs/design/errors.md` · D-009 added (timeout 30s); D-011 added (panic resets state)
 - **Phase:** 0 (design)
 - **Depends on:** T-D03 (need to know how the package surfaces things)
 - **Reference reads:**
@@ -173,4 +222,4 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ## Done
 
-(empty)
+(Tasks above marked `done` retain their full briefing for posterity. Future "done" entries should keep the same shape: status line cites commit + output paths + any decision-record updates.)

@@ -54,7 +54,7 @@ ADR-lite log. Append-only. Each entry: status (proposed | accepted | superseded)
 
 ## D-005 — Stable snippet IDs default to a content hash; explicit IDs override
 
-**Status:** proposed · 2026-05-06
+**Status:** superseded by D-007 · 2026-05-06
 
 **Decision (proposed):** `id = explicit_id_or(blake3(src)[:12])`. `loc.doc_order` is tracked separately for ordering. Whitespace/comment insensitivity in the hash is **not** in scope for v0 (a future tweak if it pays off).
 
@@ -73,3 +73,80 @@ ADR-lite log. Append-only. Each entry: status (proposed | accepted | superseded)
 **Rationale:** evcxr's API may need small adjustments (e.g. better hooks for capturing display output); easier to iterate against a local checkout. But shipping `evcxr-typst` to crates.io requires a published baseline.
 
 **Consequences:** a one-time dependency change at release time. Document the required evcxr version in `crates/evcxr-typst/Cargo.toml` and the README.
+
+---
+
+## D-007 — Snippet ID = `blake3(src)` base32, 12 chars, with occurrence-index suffix on collision (supersedes D-005)
+
+**Status:** accepted · 2026-05-06
+
+**Decision:**
+- Default ID = `base32_lower(blake3(snippet_src_bytes))[..12]`. RFC 4648 alphabet, no padding, lowercase.
+- Explicit override via `id:` on the package call. Validation: `[a-z0-9_-]{1,64}`, no reserved prefix (`_`, `evcxr-`, or default-ID-shape).
+- Collisions among default IDs disambiguated by occurrence-index suffix (`xyz`, `xyz-1`, `xyz-2`, …). Collisions among explicit IDs are a hard error. An explicit ID that collides with a default ID wins; the default-bearer gets the suffix.
+- The ID is *only* a stable name. Toolchain/dependency identity lives in the cache key, not the ID. See `docs/design/cache.md`.
+- Whitespace/comment normalization is **not** in scope for v0; raw-bytes hashing is the v0 behavior.
+
+**Rationale:** BLAKE3 is fast/modern and `evcxr-typst` already pulls a hashing dep transitively. 12 base32 chars are filesystem-safe across macOS/Windows/Linux, case-insensitive-safe, and short enough to read in a directory listing while leaving 60 bits of entropy. Occurrence-index suffixing keeps duplicate-snippet suffixes stable across unrelated paragraph edits — `doc_order` would shift on every insertion.
+
+**Consequences:** Whitespace-sensitive hashing means trivial reformatting busts the snippet-output cache (but not its neighbours; rustc artifact cache absorbs most of the cost). The CLI must run a one-pass collision-resolver after `typst query`, before evaluation.
+
+---
+
+## D-008 — File-based modules (`mod foo;`) are not supported; inline `mod foo { … }` is the canonical form
+
+**Status:** accepted · 2026-05-06
+
+**Decision:** Reject `mod foo;` (file-on-disk reference) at the CLI side with a clear error pointing the user at inline modules or `:dep`. Inline `mod foo { … }` works and composes across snippets normally.
+
+**Rationale:** `mod foo;` resolves relative to evcxr's ephemeral `crate_dir()/src/`, which is a tmpdir, not the user's `.typ` file's directory. Even if we resolved paths to the document's directory, the file's contents wouldn't participate in snippet identity / cache invalidation, leading to silent staleness. Inline modules avoid all of this and cover the legitimate need.
+
+**Consequences:** Users porting existing multi-file Rust projects must inline or pull as a `:dep`. Error message must be informative.
+
+**Reference:** `docs/design/snippet-semantics.md` § "mod foo; (file-based modules)".
+
+---
+
+## D-009 — Snippet timeout = 30s default, configurable
+
+**Status:** accepted · 2026-05-06
+
+**Decision:** Each snippet's `CommandContext::execute` is wrapped in a `tokio::time::timeout` with a 30-second default. Configurable via `--snippet-timeout 60s` on the CLI (and `--no-snippet-timeout` to disable). Per-snippet override via Typst-side `rust(..., timeout: 5min)` is **deferred** (depends on T-D03's package API supporting that kwarg; flagged as RECON-T-D03 in `docs/design/errors.md`).
+
+**Rationale:** Without a timeout, an infinite loop in any snippet hangs `evcxr-typst run` indefinitely with no signal. 30s is generous for normal interactive snippets and short enough that CI surfaces the problem quickly.
+
+**Consequences:** On expiry: SIGKILL the host child, record a `phase: "timeout"` error in the snippet's `<id>.error.json`, evcxr respawns the child fresh — meaning all `let` bindings from earlier snippets are lost (see D-011). Users running long batch computations need to set the flag.
+
+**Reference:** `docs/design/errors.md` § "1.e Timeout".
+
+---
+
+## D-010 — Snippet-output cache uses content-addressed storage with a separate id-addressed view
+
+**Status:** accepted · 2026-05-06
+
+**Decision:** Per-snippet output cache lives at `.evcxr-typst-cache/v1/`. Two layers: (a) a content-addressed store `cas/<XX>/<full-cache-key>/` keyed by the cache-key formula in `docs/design/cache.md`; (b) a materialized id-addressed view (hardlinks or copies) for the Typst package to read at render time. The package never sees the CAS.
+
+The cache key formula (formal version in `docs/design/cache.md`) hashes: snippet src, prior-snippet Merkle chain, active deps, evcxr version, rustc version, target triple, allowlisted env vars.
+
+The cache directory sits at the workspace level (alongside the `.typ` source), gitignored by default. CAS-by-key gives us free deduplication across documents, easy GC (`evcxr-typst clean` = drop CAS dirs not referenced by any `index.json`), and rename-stability (changing an explicit ID just rewrites `index.json`).
+
+**Rationale:** ARCHITECTURE.md's original sketch (`<id>.{txt,png,…}`) conflated identity and validity. Splitting them is what lets a cache hit survive a snippet rename, and lets identical bytes computed in two different documents share storage.
+
+**Consequences:** Implementation cost a bit higher (atomic-rename staging, two-char fan-out for FAT-family FSs, hardlink-or-copy materialization). We accept this; cache correctness is load-bearing for watch-mode UX.
+
+**Reference:** `docs/design/cache.md` § "Cache layout on disk".
+
+---
+
+## D-011 — A snippet that panics resets evcxr's child; persisted `let` bindings are lost
+
+**Status:** accepted · 2026-05-06
+
+**Decision:** Document this prominently. A snippet that panics (or aborts, or segfaults, or hits the snippet timeout) kills the host child process; evcxr will respawn a fresh child for the next snippet. All `let`-bindings established before the offending snippet are gone from the new child's state. Item definitions (`fn`, `struct`, `impl`, `mod`, `use`) are recompiled from `committed_state` and survive the respawn — only runtime variable values are lost. Surface this with a banner across the rendered document run output and a per-affected-snippet sub-warning.
+
+**Rationale:** This is evcxr's existing behavior, not something we can change. Pretending it doesn't happen would silently produce wrong output (a downstream snippet sees `let`s that don't actually exist).
+
+**Consequences:** ARCHITECTURE.md's "Composition across snippets" table needed a caveat (added in the same commit as this entry). The watch loop's "leaf snippet modified" optimization must not apply if the previous run had any panic — replay from the panic point.
+
+**Reference:** `docs/design/errors.md` § "1.c Runtime panic" and the contradiction flag at line 58.
