@@ -104,7 +104,8 @@ Start with **A** (CLI sidecars). Ship the catalogue's first six rows that way. R
 | **S1** | CLI emits `<id>.semantic.cbor`. Package implements `type-of`, `signature-of`, `kind-of`. Reads from sidecar; placeholder fallback. | Main Phase 3 (`evcxr-typst run` end-to-end + sidecar plumbing) shipped. |
 | **S2** | Add `doc-of`, `items-table`, `ref`. Same plumbing; richer schema. | S1. |
 | **S3** | Add `diagnostics-of`. The CLI runs `RustAnalyzer::diagnostics` per snippet alongside `execute`; failures don't abort the run. | S1. |
-| **S4** *(optional, bigger)* | WASM plugin (`evcxr-typst-analyzer`). Architecture and risks fully captured in `docs/design/wasm-plugin-analyzer.md`. | Main Phase 4 (safety + pretty errors) shipped, plus S3. |
+| **S4-spike** *(prerequisite for S4)* | One engineering day. `ra_ap_syntax` parse-only, isolated workspace, `[patch.crates-io]` pinned to a specific fork commit, hello-world `analyzer.wasm` round-tripping a snippet through the wasm-minimal-protocol. Output: working `.wasm`, blob-size measurement, write-up of what broke. Fail/timeout = drop S4. | Nothing on main. |
+| **S4** *(optional, bigger)* | WASM plugin (`evcxr-typst-analyzer`). Architecture, mechanism (`[patch.crates-io]`, isolated `[workspace]`, pinned `rev`), and risks fully in `docs/design/wasm-plugin-analyzer.md`. | S4-spike succeeded, main Phase 4 (safety + pretty errors) shipped, plus S3. |
 
 Track work is interleaved with main work, never blocking. If main and S1 both have an open task, main wins.
 
