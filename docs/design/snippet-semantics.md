@@ -157,8 +157,17 @@ rendered error box.
 > before driving evcxr**, not silently let the later overwrite. evcxr's
 > behavior here is too quiet to be useful for a multi-page document.
 >
-> Open question: should `dep()` calls be allowed *anywhere* in the
-> document and pre-collected, or only at the top? T-D03 decision.
+> **Resolved (D-013): `dep()` calls remain inline-anywhere.** They may
+> appear at the top of the document, immediately before their consumer,
+> or interleaved through chapters; document order determines visibility.
+> The CLI pre-collects all `<evcxr-dep>` markers during the `typst query`
+> pass, validates that no two dep calls disagree on version (G5), and
+> emits `:dep` directives in document order before the corresponding
+> snippets. Restricting `dep()` to a top-of-document prelude was
+> considered and rejected: gallery example `e-cratesio-dep.typ` places
+> `#dep("regex", "1")` immediately before the consumer for narrative
+> flow, and a long document benefits from co-locating a dep with the
+> chapter that introduces it. See `package-api.md` § 4.2.
 
 `extern crate foo;` inside a snippet *also* auto-adds `foo = "*"` to
 `external_deps` if no entry exists. This is a footgun: it can trigger a
@@ -380,10 +389,10 @@ Each item: behavior, why, recommendation.
 Flagged for the orchestrator to resolve later, not blocking T-D01:
 
 1. **Should `dep()` be lifted to a document-level construct, separate
-   from inline `#rust(…)` snippets?** The CLI has to pre-collect deps
-   anyway (G5). The Typst package could expose `#evcxr.dep("serde",
-   "1")` at the top of the document and reject mid-document `:dep`.
-   Decision deferred to T-D03.
+   from inline `#rust(…)` snippets?** **Resolved (D-013):** no — `dep()`
+   stays inline-anywhere; the CLI pre-collects markers during the
+   `typst query` pass and orders them in document order. See § Rules.3
+   above and `package-api.md` § 4.2.
 
 2. **Do we want to support `:dep path = …` with paths *relative to
    the `.typ` file*?** evcxr resolves paths relative to its own

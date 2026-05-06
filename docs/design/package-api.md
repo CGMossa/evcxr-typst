@@ -139,7 +139,7 @@ fn make_data() -> Vec<Sample> { /* … */ }
   id: none,
   deps: (),
   format: auto,           // "json" | "cbor" | auto (sniff)
-  fallback: (:),          // value to return when sidecar is missing
+  fallback: (:),          // value to return when no sidecar yet exists (pre-CLI run)
 ) -> any
 ```
 
@@ -153,24 +153,36 @@ The odd one out: it does **not** return content. It returns a Typst value (dict 
 The dataset has #stats.n samples, mean #stats.mean.
 ```
 
-In fallback mode (no sidecar), returns `fallback` (default empty dict) — using `none` as the default would force every call site to handle the option type, which is hostile.
+Three return modes (resolved in D-015):
 
-### 2.6 `dep(spec, ..)` — declare a Cargo dependency
+- **Success** — the parsed dict/array.
+- **No sidecar yet** (CLI hasn't been run, or `--allow-eval` was off) — returns `fallback` (default `(:)`). Lets the document compile cleanly under bare `typst compile` per D-004 without forcing every call site to pattern-match an option type.
+- **Snippet errored** (`<id>.error.json` present) — returns `none`, *and* a side-effect error box is emitted at a sibling location (see `errors.md` § 4 and D-015). Returning `none` here forces the caller to acknowledge a real failure (`if stats != none { … }`), distinct from the unevaluated case above; quietly returning a fake dict would silently propagate corrupt data into downstream Typst layout.
+
+### 2.6 `dep(name, version, ..)` — declare a Cargo dependency
 
 ```typc
 #let dep(
-  spec,                   // string: crate name, or "name = ..." TOML fragment
+  name,                   // crate name, OR "name = …" TOML fragment if it contains '='
+  version: none,          // version requirement, e.g. "1", "1.0", "^1.2"; optional positional too
   features: (),           // array of strings
+  default-features: true,
+  git: none,              // git URL
+  path: none,             // local path (resolved relative to main.typ)
+  package: none,          // rename: depend on `serde` but call it `s`
   id: none,
   show: false,            // by default deps render nothing
 ) -> content
 ```
 
-Emits an `<evcxr-dep>` metadata marker. The CLI translates this into evcxr's `:dep` directive before any snippet that references it (see §4 on ordering). Renders nothing by default; `show: true` renders a small "depends on: serde 1.0" tag for documentation-style writing.
+Emits an `<evcxr-dep>` metadata marker at its document position. The CLI pre-collects all `<evcxr-dep>` markers, resolves them in document order, and emits a `:dep` directive into evcxr before any snippet that comes after the marker (see §4 on ordering and D-013 on inline-anywhere placement). Renders nothing by default; `show: true` renders a small "depends on: serde 1.0" tag for documentation-style writing.
+
+`version` is positional too — `dep("regex", "1")` is the canonical form used throughout the gallery.
 
 ```typ
 #dep("serde", features: ("derive",))
-#dep("plotters = \"0.3\"")
+#dep("regex", "1")
+#dep("plotters = \"0.3\"")            // TOML escape hatch (the '=' triggers it)
 
 #rust(```rust
 use serde::{Serialize, Deserialize};
@@ -178,11 +190,14 @@ use serde::{Serialize, Deserialize};
 ```)
 ```
 
-Single argument forms supported:
+Forms supported:
 
 - `dep("serde")` → latest
+- `dep("regex", "1")` → `regex = "1"`
 - `dep("serde", features: ("derive",))`
-- `dep("serde = \"1.0\"")` — full TOML fragment, passed through verbatim
+- `dep("tokio", "1", features: ("full",))`
+- `dep("mycrate", path: "./mycrate")` — `path` is canonicalized relative to the document
+- `dep("plotters = \"0.3\"")` — full TOML fragment, passed through verbatim. Detected by the package because the single positional arg contains `=` outside leading whitespace.
 
 Returning a **handle** (an opaque dict with the dep's id) is supported via `let s = dep("serde")`, so callers can reference deps explicitly via `deps: (s,)` on a snippet (see §4).
 
@@ -205,7 +220,7 @@ Per D-004, `typst compile main.typ` without running the CLI must succeed and pro
 | `rust-out` | A single placeholder box with text "(rust output not yet evaluated)". |
 | `rust-display` | A placeholder box sized to a default 4cm × 3cm with a Unicode picture-frame glyph (U+1F5BC) and the snippet id. |
 | `rust-hidden` | Nothing (same as success). |
-| `rust-data` | Returns the `fallback:` value (default empty dict). No visible artifact. |
+| `rust-data` | No sidecar yet → returns `fallback:` value (default empty dict), no visible artifact. Errored snippet → returns `none` and emits a sibling error box (see D-015). |
 | `dep` | Nothing by default; with `show: true`, "depends on: <spec>" tag (no fallback distinction needed). |
 
 ### 3.2 Placeholder box anatomy
@@ -259,7 +274,9 @@ When `id` is supplied, that's the verbatim id used for the sidecar filename (`<.
 
 ### 4.2 `deps:` — explicit dep ordering
 
-By default, **document order is the contract**: any `dep(...)` call appearing earlier in the document than a snippet is in scope for that snippet. The CLI sees deps and snippets interleaved in `loc.doc_order` and emits `:dep` directives in the right place.
+`dep(...)` calls are **inline-anywhere** (D-013): a Typst author may place them at the document head, just before their consumer, or sprinkled through chapters. By default, **document order is the contract**: any `dep(...)` call appearing earlier in the document than a snippet is in scope for that snippet. The CLI sees deps and snippets interleaved in `loc.doc_order` and emits `:dep` directives in the right place.
+
+Two `dep()` calls naming the same crate with conflicting versions are a **CLI-level error**, not a silent last-write-wins (per snippet-semantics G5). The error names both call sites.
 
 `deps:` is the explicit-override form for two cases:
 
@@ -349,14 +366,21 @@ Fields:
 
 ---
 
-## 7. Open questions / bikeshed list
+## 7. Resolved naming and API choices (D-012)
 
-These are genuinely arguable; flagging for human decision rather than picking and pretending it's obvious:
+Validated against the example gallery in `docs/design/examples/` (all 8 `.typ` files plus `index.md`). Final rulings:
 
-1. **`rust` vs `eval` vs `rs` vs `evcxr` as the primary verb.** I picked `rust` because it's instantly readable to Typst users who don't know what evcxr is, and it matches the language tag in `` ```rust ``` ``. `evcxr` is technically more correct (we could swap engines). `eval` is too generic (Typst already has `eval`, collision is bad). `rs` is too terse. **Strong opinion, weakly held.** If the gallery comes back with `evcxr-out` reading better than `rust-out`, swap.
-2. **`rust-out` vs `rust-print` vs `rust-stdout`.** Strawman has `rust-out`. `rust-print` reads well for `print!`/`println!` but is misleading when the snippet emits via `eprintln!` or panic-output that we capture. `rust-stdout` is most precise but ugly. Picked `rust-out` for brevity; flagging.
-3. **`rust-display` vs `rust-show` vs `rust-render`.** "Display" matches Jupyter/IPython terminology and evcxr's own `EVCXR_BEGIN_CONTENT` semantics. `show` collides with Typst's `show` rule. `render` is fine but vague. Picked `display`.
-4. **`rust-hidden` vs `rust-setup` vs `rust-quiet`.** Strawman has `rust-hidden`. `rust-setup` reads better for the dominant use case ("define a struct for later") but is misleading when the snippet has visible side effects intentionally suppressed. `rust-quiet` matches Jupyter's `;` suffix convention. Picked `rust-hidden` for now — it describes the rendering, not the intent.
-5. **Should `rust(...)` default to showing source AND output, or just output?** I picked both (matches Jupyter cell default; matches how the gallery `h-mini-report.typ` will probably want to read). A docs-focused user might prefer output-only as default and explicit `rust(...show: "both")` for tutorials. Configurable via `setup(default-show: ...)`.
-6. **`dep` API: positional `spec` string vs structured kwargs.** I support both (`dep("serde")`, `dep("serde = \"1.0\"")`, `dep("serde", features: (...))`). Some readers will find that overloaded. Splitting into `dep-crate(name, version: ..)` vs `dep-toml(spec)` is cleaner but verbose.
-7. **Schema additions (`deps`, `options`) vs strict adherence to ARCHITECTURE.md's documented schema.** Flagged in §5.1. Either fold them in (update ARCHITECTURE.md) or strip them and have the CLI inspect `<evcxr-dep>` order for dep linkage.
+1. **Primary verb: `rust`.** Instantly readable, matches the `` ```rust `` language tag, and reads naturally in flow ("If you see `Hello, world!`…"). `eval` collides with Typst's stdlib `eval`. `evcxr` is jargon. `rs` is too terse. The gallery uses `#rust(...)` throughout without strain.
+2. **Stdout-only: `rust-out`.** Brief enough to live inline ("The answer is `#rust-out(...)`."), and the gallery already reads cleanly with it (`a-hello.typ`, `h-mini-report.typ` § 5). `rust-print` is misleading because we also capture `eprintln!`/`panic` text; `rust-stdout` is precise but ugly inline.
+3. **Display-only: `rust-display`.** Matches evcxr's `EVCXR_BEGIN_CONTENT` vocabulary and Jupyter conventions. `rust-show` would clash semantically with Typst's `show` rule. `rust-render` is vague. Gallery `d-image-output.typ` and `h-mini-report.typ` § 4 read naturally.
+4. **Evaluate-and-render-nothing: `rust-hidden`.** Describes the *rendering* (no visible output) rather than guessing intent. `rust-setup` would mislead when the snippet is intentionally suppressing visible side-effects (e.g. a fixture that already happened); `rust-quiet` is unclear to non-Jupyter users. Gallery `b-struct-across-snippets.typ`, `c-module-across-snippets.typ`, and `h-mini-report.typ` § 1 use it for setup, definition, and corpus blocks alike — `rust-hidden` covers all three.
+5. **Default `show:` for `rust(...)`: `"both"` (source + output).** Matches Jupyter cell convention and matches every gallery use of `#rust(...)` (`a-hello.typ`, `b-…`, `e-cratesio-dep.typ`, `f-async-tokio.typ`, `g-error-case.typ`, `h-mini-report.typ` § 2). Output-only as the default would require explicit `show: "both"` on every tutorial snippet — backwards. Configurable via `setup(default-show: "output")` for docs-focused authors.
+6. **`dep` API: positional `(name, version?)` plus kwargs, with TOML-fragment escape hatch.** Final shape:
+   - `dep(name)` — latest.
+   - `dep(name, version)` — pin (gallery's idiom: `#dep("regex", "1")`).
+   - `dep(name, features: ("derive",))` and other kwargs (`default-features`, `git`, `path`, `package`).
+   - `dep("name = ...")` — single string detected by the package as a TOML fragment (presence of `=` outside of leading whitespace), passed through verbatim to evcxr's `:dep`.
+   The two-arg positional form is the canonical one in the gallery; kwargs cover the realistic surface; the TOML escape hatch survives for power users without forcing a separate `dep-toml` function. **`dep()` calls remain inline-anywhere**; the CLI pre-collects them in document order and errors on conflicting versions per snippet-semantics G5 (see D-013).
+7. **Schema additions (`deps`, `options`) on `<evcxr-snippet>`.** Folded in. The architecture sketch already declared the schema "subject to change pre-1.0; pinned via a version field"; these additions are a strict superset, so `v` stays at `1`. ARCHITECTURE.md was updated in the same pass that added DECISIONS.md D-012. (No separate decision; bookkeeping only.)
+
+Open question: per-snippet `timeout:` kwarg is **deferred** (D-009 RECON-T-D03; tracked under T-D08).

@@ -2,21 +2,19 @@
 
 These are **specification documents**, not runnable code. They show the
 target user-facing API of the `packages/evcxr/` Typst package as it would
-read in a finished document. Function names, signatures, and defaults are
-strawmen here --- the package API itself is designed in task T-D03, and
-naming choices flagged at the bottom of this file are explicitly handed
-to that task to bikeshed.
+read in a finished document. Names are now finalised (D-012, D-013); the
+authoritative reference is `docs/design/package-api.md`.
 
-The strawman API used throughout the gallery:
+API summary used throughout the gallery:
 
 | Function | Purpose |
 |---|---|
-| `rust(code)` | Show the code AND its captured stdout. |
+| `rust(code)` | Show the code AND its captured stdout (default `show: "both"`). |
 | `rust-out(code)` | Show only the captured stdout (hide the source). |
-| `rust-display(code)` | Show only the display object (image / HTML / etc). |
-| `rust-hidden(code)` | Evaluate but render nothing. Setup-style snippets. |
-| `rust-data(code)` | Return a Typst dictionary from a JSON/CBOR-emitting snippet. |
-| `dep(name, version)` | `:dep`-equivalent. Optional `features:` argument. |
+| `rust-display(code)` | Show only the display object (image / HTML / etc), with `prefer:` to pick among multiple artifacts. |
+| `rust-hidden(code)` | Evaluate but render nothing. Setup / definition / fixture snippets. |
+| `rust-data(code)` | Return a Typst dictionary from a JSON/CBOR-emitting snippet. Returns `none` on snippet error; returns `fallback:` (default `(:)`) when not yet evaluated. |
+| `dep(name, version, ..)` | `:dep`-equivalent. `version` is positional; `features:`, `git:`, `path:`, `package:`, `default-features:` are kwargs. A single `"name = …"` string is treated as a TOML fragment. |
 
 ## The gallery
 
@@ -41,34 +39,28 @@ cross-snippet item composition (T-D01's territory):
 - `g-error-case.typ` --- mostly an error-rendering example, but the trailing snippet implicitly depends on context state surviving the failure.
 - `h-mini-report.typ` --- the ambitious one: five snippets, with later ones consuming bindings (`RAIN`, `stats`) and items (`Summary`, `summary()`) committed by earlier ones. Snippet 5 also illustrates that the dependency graph is *not* a chain --- it skips snippets 3 and 4 --- which is a load-bearing detail for the cache key in T-D04.
 
-## Naming choices for T-D03 to bikeshed
+## Naming choices — resolved (D-012, D-013)
 
-These calls were made in the strawman to keep the examples readable.
-None are precious; T-D03 should reopen any of them.
+The names used throughout the gallery are now the final v0 API. Recap:
 
-- **`rust` vs `evcxr` vs `eval`** as the primary verb. `rust(code)` reads
-  well in prose, but conflates "the language" with "this particular eval
-  context". `evcxr(code)` is honest but awkward to a non-Rust reader.
-- **`rust-display` vs `rust-image` vs `rust-figure`.** "Display" matches
-  evcxr's vocabulary (`evcxr_display`) but is overloaded in the
-  Typst/CSS world. "Image" is too narrow (HTML output also uses this).
-- **`rust-data` vs `rust-value` vs `rust-json`.** `rust-data` reads well;
-  it might suggest "a dataset" rather than "any structured value".
-- **`dep` vs `cargo` vs `crate-dep`.** `dep` matches evcxr's `:dep`
-  directive but is generic enough to clash mentally with Typst's own
-  package imports. Consider whether `dep` should accept the same
-  table-of-options as `:dep` does (`features`, `default-features`,
-  `git`, `path`, `package`).
-- **Hyphens vs underscores.** Typst conventions allow hyphens in
-  function names (`raw-block`, `outline-entry` precedent), but Rust
-  readers may instinctively read them as subtraction. T-D03 should
-  pick one and apply consistently; the gallery uses hyphens throughout.
-- **Implicit ID vs explicit ID argument.** None of the gallery examples
-  pass an explicit `id:`. The package needs a syntax for it
-  (`rust(code, id: "fib")`?) so authors can pin a snippet's identity
-  across edits. T-D04 cares about this.
-- **Dep emission timing.** `dep(...)` in the gallery is rendered as a
-  bare top-level call. It might be cleaner if it were a `setup()`-style
-  document-prelude block that visually doesn't render at all
-  (vs. emitting a `<evcxr-dep>` metadata marker as side effect of being
-  called inline).
+- Primary verb: **`rust`**.
+- Output-only inline: **`rust-out`**.
+- Display-only (image / HTML / etc.): **`rust-display`**, with a
+  `prefer:` kwarg to pick among multiple display artifacts.
+- Evaluate-and-render-nothing: **`rust-hidden`**.
+- Return parsed JSON/CBOR as a Typst dict: **`rust-data`**.
+- Cargo dependency: **`dep(name, version?, …)`**, accepting the same
+  table-of-options as evcxr's `:dep` (`features`, `default-features`,
+  `git`, `path`, `package`), plus a TOML-fragment escape hatch
+  (`dep("serde = \"1.0\"")`).
+- Hyphens, not underscores, throughout — matches Typst stdlib idiom
+  (`raw-block`, `outline-entry`).
+- Default `show:` for `rust(...)` is `"both"` (source + output);
+  configurable via `setup(default-show: ...)`.
+- `dep(...)` calls remain inline-anywhere (D-013); the CLI
+  pre-collects them in document order and errors on conflicting
+  versions per snippet-semantics G5.
+- Explicit `id:` argument is supported on every function for stable
+  identities across edits.
+
+See `docs/design/package-api.md` for the full function reference.

@@ -142,7 +142,8 @@ For every cache miss:
 For the id-addressed view:
 1. Stage in `tmp/view-<uuid>/<id>.<ext>`.
 2. Hardlink (preferred) or copy from CAS.
-3. `rename` over the live view location.
+3. **Skip-if-unchanged** (D-016): if the live view file already exists and its bytes equal the staged file's, delete the staged file and skip the rename. This avoids spurious `notify` events to the `typst watch` child for no-op re-evaluations (e.g. cosmetic whitespace edits). The CAS write above is always performed unconditionally; only the materialized view step is conditional.
+4. Otherwise `rename` over the live view location.
 
 `index.json` is rewritten atomically (write to `tmp/index-<uuid>.json` → fsync → rename) at the end of each CLI run.
 

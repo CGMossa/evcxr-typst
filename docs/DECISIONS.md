@@ -150,3 +150,84 @@ The cache directory sits at the workspace level (alongside the `.typ` source), g
 **Consequences:** ARCHITECTURE.md's "Composition across snippets" table needed a caveat (added in the same commit as this entry). The watch loop's "leaf snippet modified" optimization must not apply if the previous run had any panic — replay from the panic point.
 
 **Reference:** `docs/design/errors.md` § "1.c Runtime panic" and the contradiction flag at line 58.
+
+---
+
+## D-012 — Package API names: `rust` / `rust-out` / `rust-display` / `rust-hidden` / `rust-data` / `dep`; `rust(...)` defaults to `show: "both"`
+
+**Status:** accepted · 2026-05-06
+
+**Decision:**
+- Primary verb: **`rust`**.
+- Stdout-only: **`rust-out`**.
+- Display-only: **`rust-display`** (with `prefer:` kwarg to pick among PNG/SVG/HTML/JPEG when a snippet emits multiple display artifacts).
+- Evaluate-and-render-nothing: **`rust-hidden`**.
+- Parsed-data return: **`rust-data`**.
+- Cargo dependency: **`dep(name, version, ..)`** — positional `(name, version?)`, plus kwargs `features:`, `default-features:`, `git:`, `path:`, `package:`. A single positional string containing `=` outside leading whitespace is treated as a TOML fragment and passed verbatim.
+- Default `show:` for `rust(...)` is `"both"` (source + output). Configurable per-document via `setup(default-show: ...)`.
+- Hyphens, not underscores, throughout.
+
+**Rationale:** Validated against all 8 `.typ` files in `docs/design/examples/`. `rust` reads naturally in flow and matches the language tag; `rust-out` is brief enough to live inline ("The answer is #rust-out(...)"); `rust-display` matches evcxr's `EVCXR_BEGIN_CONTENT` vocabulary and avoids colliding with Typst's `show` rule; `rust-hidden` describes the rendering rather than guessing intent (covers both setup-style and intentionally-suppressed cases); `show: "both"` matches Jupyter-cell convention and matches every `#rust(...)` use in the gallery without needing per-call overrides; `dep(name, version)` is the canonical form already used by the gallery (`#dep("regex", "1")`).
+
+**Consequences:** ARCHITECTURE.md's `<evcxr-snippet>.kind` enum lists exactly these five kinds. `rust-html` is *not* a separate function in v0; HTML output is one of the artifacts surfaced by `rust-display` via `prefer: "html"`. The `dep()` API is mildly overloaded (two-arg positional, kwargs, TOML escape hatch) but each form serves a distinct case. Per-snippet `timeout:` kwarg remains deferred (T-D08).
+
+**Reference:** `docs/design/package-api.md` § 7 (resolved) and § 2; gallery `docs/design/examples/`.
+
+---
+
+## D-013 — `dep()` calls remain inline-anywhere; the CLI pre-collects in document order
+
+**Status:** accepted · 2026-05-06
+
+**Decision:** `#dep(...)` may be placed anywhere in the document — at the head, immediately before its consumer, or interleaved through chapters. Document order determines visibility. The CLI pre-collects all `<evcxr-dep>` markers during the `typst query` pass, validates that no two calls disagree on version (snippet-semantics G5; otherwise hard error), and emits `:dep` directives in document order before the corresponding snippets.
+
+**Rationale:** Restricting `dep()` to a top-of-document prelude was considered. Rejected: gallery `e-cratesio-dep.typ` co-locates `#dep("regex", "1")` immediately above its consumer for narrative flow, and a long document benefits from declaring deps adjacent to the chapter that uses them. The CLI already needs to pre-collect deps to detect version conflicts, so allowing inline placement costs nothing operationally.
+
+**Consequences:** Authors can place deps wherever reads best. CLI complexity is unchanged from the strawman: a single pre-collection pass over the metadata query result. Conflicting versions across `dep()` calls are a hard error with both call sites named.
+
+**Reference:** `docs/design/package-api.md` § 4.2; `docs/design/snippet-semantics.md` § Rules.3 (resolved Q1).
+
+---
+
+## D-014 — Snippet-id attribution via a parallel offset map on the `evcxr-typst` side, not an upstream patch
+
+**Status:** accepted · 2026-05-06
+
+**Decision:** Mapping rustc/evcxr error spans back to a Typst snippet id is done by `evcxr-typst` maintaining its own `OffsetMap` keyed by submission order, not by extending evcxr's `CodeKind::OriginalUserCode`. The map records, for each snippet fed to `CommandContext::execute`, the `snippet_id`, the exact `src` bytes submitted, and the byte range within the submission buffer. Cross-snippet item attribution adds a `committed_items: HashMap<ItemName, SnippetId>` rebuilt as we feed snippets, used to attribute spans that land in evcxr's regenerated `items_code()` for re-attached items back to the snippet that originally committed each item.
+
+**Rationale:** evcxr's `CodeKind` is `pub(crate)`; extending it requires a non-trivial upstream API change with its own design and review cycle. Because `evcxr-typst` feeds exactly one snippet per `execute()` call, it already knows the snippet id at submission time and can map back without any evcxr-side change. The local map is strictly less precise than a `CodeKind::OriginalUserCode { snippet_id }` would be — cross-snippet item attribution leans on a name-based hash-match — but is sufficient for the rendering shapes specified in `errors.md` § 4.
+
+**Consequences:** No upstream patch in v0. If span-fidelity for cross-snippet errors becomes a real problem in practice, revisit and propose the upstream patch then. No new `T-Uxx` upstream task is created at this time.
+
+**Reference:** `docs/design/errors.md` § 3 and § 6 (the `OffsetMap` structure); `errors.md` § 8.1 (resolved).
+
+---
+
+## D-015 — `rust-data()` returns `none` on snippet error, `fallback:` when not yet evaluated
+
+**Status:** accepted · 2026-05-06
+
+**Decision:** `rust-data()` has three distinct return modes:
+- **Success** — the parsed JSON/CBOR dict or array.
+- **No sidecar yet** (CLI hasn't run, or `--allow-eval` was off) — returns the user-supplied `fallback:` value (default `(:)`). This is the under-D-004 fallback path; it lets bare `typst compile` produce a clean PDF without forcing every call site to handle an option type.
+- **Snippet errored** (`<id>.error.json` present) — returns `none`, *and* a sibling error box is emitted at a sibling location.
+
+**Rationale:** Considered three options: (a) always `none` on absence-or-error, (b) sentinel `(error: true, message: "...")` dict, (c) hard-fail (Typst panic). Sentinel dicts silently propagate corrupt data into downstream Typst layout — a doc author writing `#stats.mean` in flow text would see a degenerate value rendered as if it were real. Hard-fail violates `errors.md` § 0 (a Rust failure must not abort the Typst render). Returning `none` for genuine errors forces callers to acknowledge failure (`if stats != none { … } else { ... }`), distinct from the "not yet evaluated" case which still wants a sensible default. Validated against gallery `h-mini-report.typ` § 3, which uses `rust-data` to drive a Typst table — under this decision, an authoring-time bare `typst compile` shows the table populated with empty/zero cells from `fallback`, while a real failure during a run shows an error box plus a clearly-marked `none` in downstream code paths.
+
+**Consequences:** Two failure modes for `rust-data` to handle, but they are distinguishable. Downstream Typst code that does `#stats.mean` on a `none` value fails with a clear Typst error, which is the correct behaviour — the original Rust failure already produced a visible error box.
+
+**Reference:** `docs/design/package-api.md` § 2.5; `docs/design/errors.md` § 4 and § 8.4 (resolved).
+
+---
+
+## D-016 — Skip sidecar rename when materialized bytes are unchanged
+
+**Status:** accepted · 2026-05-06
+
+**Decision:** During the id-addressed view materialization step (`cache.md` § "Atomic-write strategy"), if the live target file already exists and its bytes equal the staged file's, drop the staged file and skip the `rename`. The CAS write itself (`cas/<XX>/<full-key>/`) is **always** performed — its presence is what marks a cache key as having been computed. Only the materialization to the live id-addressed view is conditional.
+
+**Rationale:** `typst watch` listens (via `notify`) for changes to files reached by `read()`/`image()`/`json()`/etc., including our sidecars. A no-op edit (cosmetic whitespace, unrelated paragraph rewrite) that re-evaluates a snippet to byte-identical output would otherwise trigger a `rename` event, a `typst watch` re-render, and a visible flicker for no reason. One `stat` + one streaming compare per snippet per cycle is dwarfed by evcxr execution cost; the visible-flicker reduction is real in interactive sessions. Reconciles cleanly with `cache.md`'s atomic-write strategy: CAS atomicity is preserved (always written), only the view-rename is conditional.
+
+**Consequences:** The materialization path adds a "compare-then-rename" branch. If the comparison disagrees (bytes differ), the original atomic-rename path applies unchanged. CAS-by-key behaviour, GC, hardlink-vs-copy choice, and all other cache.md guarantees are unaffected.
+
+**Reference:** `docs/design/watch-loop.md` § 9 (resolved Q1); `docs/design/cache.md` § "Atomic-write strategy" (updated).

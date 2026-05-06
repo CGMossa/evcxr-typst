@@ -4,13 +4,12 @@ How compile errors, runtime panics, and pipeline failures from `evcxr` reach the
 reader of the rendered Typst document and the developer running
 `evcxr-typst run|watch` in a terminal.
 
-> **API names are placeholders.** T-D03 (package API) is being designed in
-> parallel and `docs/design/package-api.md` does not exist at the time of
-> writing. This document uses the names already implied by `docs/ARCHITECTURE.md`
-> and `docs/design/examples/`: `rust()`, `rust-out()`, `rust-display()`,
-> `rust-html()`, `rust-data()`, `dep()`, plus a hypothesized `rust-hidden()`.
-> When T-D03 lands, reconcile the names in § 4 and § "Open questions".
-> **Reconciliation flag:** RECON-T-D03.
+> **API names finalised (D-012).** This document uses the resolved names from
+> `docs/design/package-api.md`: `rust()`, `rust-out()`, `rust-display()`,
+> `rust-data()`, `rust-hidden()`, `dep()`. (`rust-html()` is *not* a
+> separate function in v0 — HTML is one of the artifacts surfaced by
+> `rust-display()` via its `prefer:` kwarg.) Per-snippet `timeout:` kwarg
+> remains deferred under T-D08 (RECON-T-D03 → T-D08).
 
 ---
 
@@ -263,11 +262,9 @@ produced while compiling snippet *B*:
 
 How we know A vs B: evcxr's `CompilationError::is_from_user_code()` plus its
 `code_origins: Vec<CodeKind>` already distinguish user code from generated
-wrapper code. We extend that by also tagging each piece of user code with the
-*snippet id* it came from (an extension to evcxr's `CodeBlock` /
-`OriginalUserCode`, since today all "user code" fed to a single
-`CommandContext::execute` call is treated as one origin). This is a small
-upstream patch — see Open Question § 8.1.
+wrapper code. To map a user-code span back to a *snippet id* we maintain a
+**parallel offset map** on the `evcxr-typst` side, not an upstream patch
+(resolved in D-014). The offset map's structure is described in § 6 below.
 
 ---
 
@@ -282,8 +279,7 @@ Function-level behaviour:
 | `rust(...)` (default; shows code + output) | Code block still rendered; **error box** replaces the output area. |
 | `rust-out(...)` (output only) | **Error box** in place of output. |
 | `rust-display(...)` (display objects only, e.g. images) | **Error box** instead of the image/etc. |
-| `rust-html(...)` | **Error box** instead of the HTML frame. |
-| `rust-data(...)` (returns dict/array to Typst) | **Returns `none`** *and* emits a side-effect error box. The doc author's downstream code must handle `none`. *(This is an open question — see § 8.4.)* |
+| `rust-data(...)` (returns dict/array to Typst) | **Returns `none`** *and* emits a side-effect error box at a sibling location. The doc author's downstream code must handle `none`. (Resolved in D-015; see `package-api.md` § 2.5.) |
 | `rust-hidden(...)` (executes but produces no doc output) | **No box in the doc.** The CLI still records the error and exits non-zero, so CI catches it. The author can opt-in to surfacing via `rust-hidden(..., on-error: "show")`. |
 | `dep("…")` | A failing `dep()` shows an error banner *at the call site* (since `dep()` normally produces no visible output). |
 
@@ -398,10 +394,55 @@ sidecar JSON.
 
 ### What we synthesize (not in evcxr today)
 
-- **Snippet-id tagging on `CodeKind::OriginalUserCode`.** Today evcxr
-  doesn't know which Typst snippet a piece of user code came from — there's
-  no concept of snippets in evcxr. We extend `OriginalUserCode` (or wrap it)
-  to carry a `snippet_id: String`. **Upstream patch needed.** See § 8.1.
+- **Snippet-id tagging — parallel offset map (D-014).** evcxr has no
+  concept of snippets and `CodeKind` is `pub(crate)`, so we don't extend
+  it. Instead we keep a tiny in-memory map on the CLI side, populated as
+  we feed snippets to `CommandContext::execute`:
+
+  ```rust
+  /// One entry per snippet ever fed to the current CommandContext, in
+  /// the order it was fed. Cleared on `:clear` (watch-loop reset) and
+  /// rebuilt as the linear replay re-feeds snippets.
+  struct SnippetSubmission {
+      snippet_id: String,        // <evcxr-snippet>.id
+      src: String,               // exact bytes passed to execute()
+      // Byte range *within the buffer we passed to execute()*. Because
+      // we feed exactly one snippet per execute() call, this is always
+      // (0, src.len()). Kept explicit for clarity / future flexibility.
+      submitted_byte_start: usize,
+      submitted_byte_end: usize,
+  }
+
+  struct OffsetMap {
+      submissions: Vec<SnippetSubmission>,
+      // Reverse lookup: a Span we get back from a CompilationError is
+      // line/column-relative to the buffer we just submitted. Resolve
+      // by converting line/col → byte offset (using the same
+      // `span_to_byte_range` algorithm exposed in evcxr's errors.rs)
+      // and matching against the most recently submitted snippet.
+  }
+  ```
+
+  In v0 we only need the *current* submission to attribute compile errors
+  raised by the just-submitted snippet (case § 1.a). Cross-snippet errors
+  (§ 1.b — error in B about an item defined in A) currently surface with
+  spans that point into evcxr's regenerated `items_code()` for the
+  re-attached items, *not* into A's original src. To attribute those back
+  to A, we additionally remember each snippet's contribution to
+  `committed_state.items` keyed by `snippet_id`, and when we see a span
+  in the wrapper-emitted items code we hash-match the source line back
+  to the snippet that committed that item. Implementation detail in
+  T-I07; the data structure is just `submissions` plus a
+  `committed_items: HashMap<ItemName, SnippetId>` rebuilt from the same
+  feed sequence.
+
+  This avoids the upstream-patch coordination cost. It is strictly less
+  precise than tagging `CodeKind::OriginalUserCode` directly — a future
+  upstream contribution would simplify `committed_items` reconstruction —
+  but it is sufficient for the rendering shapes in § 4. If span fidelity
+  becomes a real problem in practice, revisit and propose the upstream
+  patch then.
+
 - **Byte offsets within snippet src.** evcxr's `Span` is line/column
   based; we convert to byte offsets using the same `span_to_byte_range`
   algorithm that `errors.rs` already has (we may want to expose it `pub` —
@@ -470,11 +511,10 @@ recover from (3 child re-spawns within 10s → bail with an explicit message).
 ## 8. Open questions
 
 1. **(Cross-snippet attribution implementation: where does the snippet-id
-   tag live?)** Easiest is an upstream patch to evcxr extending
-   `CodeKind::OriginalUserCode` with an optional `snippet_id: Option<String>`.
-   Alternative: a parallel data structure on our side that maps offsets in
-   the buffer we feed `CommandContext::execute` back to snippet ids. Upstream
-   is cleaner; parallel is faster to ship. Decide before T-I07.
+   tag live?)** **Resolved (D-014):** parallel offset map on the
+   `evcxr-typst` side, structure described in § 6 above. No upstream patch
+   in v0; a future upstream change to `CodeKind::OriginalUserCode` would
+   simplify cross-snippet item attribution but is not blocking.
 
 2. **(Are there errors evcxr produces that aren't `CompilationError`s but
    still need to surface as snippet errors?)** Specifically
@@ -493,12 +533,12 @@ recover from (3 child re-spawns within 10s → bail with an explicit message).
    Inconsistent — pick one. Recommend: show partial in both; user can
    distinguish via the box.
 
-4. **(`rust-data()` failure mode.)** `rust-data()` is supposed to return a
-   Typst dict/array for use in downstream Typst expressions. On error, what
-   does it return? Options: (a) `none` (forces caller to handle); (b) a
-   sentinel `(error: <msg>)` dict (caller may unwittingly use it as data);
-   (c) panics the Typst render (defeats § 0 goal). Recommend (a). Confirm
-   in T-D03.
+4. **(`rust-data()` failure mode.)** **Resolved (D-015):** option (a),
+   return `none` on error and emit a sibling error box. The unevaluated
+   case (no sidecar yet) returns the user-supplied `fallback:` value
+   (default `(:)`) so `typst compile` works under D-004. Sentinel dicts
+   silently propagate corrupt data into downstream layout; hard-fail
+   defeats § 0. See `package-api.md` § 2.5 for the full three-way return.
 
 5. **(`--allow-eval` + a snippet errors → what's the behaviour without
    `--allow-eval`?)** We don't run any Rust without `--allow-eval`, so
@@ -526,5 +566,6 @@ recover from (3 child re-spawns within 10s → bail with an explicit message).
 - Terminal: ariadne via evcxr's existing `build_report()`, with multi-source
   for cross-snippet and a per-run summary footer. (§ 5)
 - Run mode: keep going, exit non-zero. Watch mode: keep going forever. (§ 7)
-- Reuse all of `errors.rs`; small upstream patch to attach snippet ids to
-  `CodeKind::OriginalUserCode`. (§ 6, § 8.1)
+- Reuse all of `errors.rs`; snippet-id attribution via a parallel offset
+  map maintained by `evcxr-typst` (D-014), no upstream patch in v0.
+  (§ 6, § 8.1)
