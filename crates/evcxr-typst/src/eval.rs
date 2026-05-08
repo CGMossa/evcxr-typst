@@ -419,3 +419,54 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), Error> {
     fs::rename(&tmp, path)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn make_dep_snippet(spec: &str, version: Option<&str>, features: Vec<&str>) -> Snippet {
+        Snippet {
+            id: "test".to_owned(),
+            kind: SnippetKind::Dep,
+            file: PathBuf::from("main.typ"),
+            doc_order: 0,
+            src: String::new(),
+            options: SnippetOptions::Dep {
+                spec: spec.to_owned(),
+                version: version.map(|v| v.to_owned()),
+                features: features.iter().map(|f| f.to_string()).collect(),
+            },
+        }
+    }
+
+    #[test]
+    fn format_dep_bare() {
+        let snippet = make_dep_snippet("image", None, vec![]);
+        assert_eq!(format_dep_directive(&snippet), ":dep image");
+    }
+
+    #[test]
+    fn format_dep_version_only() {
+        let snippet = make_dep_snippet("image", Some("0.24"), vec![]);
+        assert_eq!(format_dep_directive(&snippet), ":dep image = \"0.24\"");
+    }
+
+    #[test]
+    fn format_dep_features_only() {
+        let snippet = make_dep_snippet("image", None, vec!["jpeg"]);
+        assert_eq!(
+            format_dep_directive(&snippet),
+            ":dep image = { features = [\"jpeg\"] }"
+        );
+    }
+
+    #[test]
+    fn format_dep_version_and_features() {
+        let snippet = make_dep_snippet("image", Some("0.24"), vec!["jpeg", "png"]);
+        assert_eq!(
+            format_dep_directive(&snippet),
+            ":dep image = { version = \"0.24\", features = [\"jpeg\", \"png\"] }"
+        );
+    }
+}

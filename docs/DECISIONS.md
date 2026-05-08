@@ -91,6 +91,8 @@ ADR-lite log. Append-only. Each entry: status (proposed | accepted | superseded)
 
 **Consequences:** Whitespace-sensitive hashing means trivial reformatting busts the snippet-output cache (but not its neighbours; rustc artifact cache absorbs most of the cost). The CLI must run a one-pass collision-resolver after `typst query`, before evaluation.
 
+**Note (T-I04):** `loc.doc_order` is populated via a Typst `counter("evcxr-doc-order")` shared by `<evcxr-snippet>` and `<evcxr-dep>` markers in `packages/evcxr/lib.typ`. The counter increments at render-time evaluation order, which matches Typst-source order for normal flow but could diverge under a `show` rule that reorders content. For literate-programming documents this edge case is negligible; if it bites, the schema can later add an explicit `loc.source_line` field (additive per D-019, no `v` bump required).
+
 ---
 
 ## D-008 — File-based modules (`mod foo;`) are not supported; inline `mod foo { … }` is the canonical form
@@ -217,6 +219,8 @@ The cache directory sits at the workspace level (alongside the `.typ` source), g
 **Consequences:** Two failure modes for `rust-data` to handle, but they are distinguishable. Downstream Typst code that does `#stats.mean` on a `none` value fails with a clear Typst error, which is the correct behaviour — the original Rust failure already produced a visible error box.
 
 **Reference:** `docs/design/package-api.md` § 2.5; `docs/design/errors.md` § 4 and § 8.4 (resolved).
+
+**Amendment (T-I04, 2026-05-08):** the single-call form `#let stats = rust-data(...)` is incompatible with Typst's type system: a function body that emits `metadata(...)<evcxr-snippet>` content cannot also return a value (content evaluation absorbs the would-be return value). The canonical API is therefore split: `rust-data(id, src, ...)` emits the metadata marker (returns nothing renderable); `rust-data-read(id:, format:, fallback:)` reads the `.cbor`/`.json` sidecar and returns the dict. Authors call them in pairs at the same `id`. Other `read`-shaped helpers (`_read-display`, `_read-html`) gate on the per-snippet `<id>.manifest.json` produced by the CLI to know which extensions exist. Implementation lives in `packages/evcxr/lib.typ` and `crates/evcxr-typst/src/eval.rs`.
 
 ---
 
