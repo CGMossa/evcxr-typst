@@ -42,7 +42,7 @@
   let ctx-end = calc.min(lines.len() - 1, le)
 
   for i in range(ctx-start, ctx-end + 1) {
-    let lineno = ctx-start + i - ctx-start + 1 + ctx-start
+    let lineno = i + 1
     let linetext = if i < lines.len() { lines.at(i) } else { "" }
     [#str(lineno) #h(0.5em) #raw(linetext) \ ]
     if (lineno == ls) {
@@ -57,11 +57,8 @@
   }
 }
 
-/// Render a styled error box for an `<id>.error.json` dict.
-///
-/// Parameters:
-///   `err`   — the parsed JSON dict from the sidecar
-///   `theme` — "auto" | "light" | "dark" (currently unused; reserved for future)
+// Render a styled error box for an <id>.error.json dict.
+// theme: "auto" | "light" | "dark" (currently unused; reserved for future)
 #let evcxr-error-box(err, theme: "auto") = {
   let v = err.at("v", default: 1)
   // Unknown schema version: surface a minimal fallback (D-019).
@@ -148,8 +145,7 @@
   )
 }
 
-/// Minimal note box for cross-snippet attribution (renders at the defining
-/// snippet when another snippet's error references it).
+// Minimal note box for cross-snippet attribution.
 #let evcxr-error-note(err) = {
   let first = err.at("errors", default: ((:),)).at(0, default: (:))
   let msg = first.at("message", default: "")

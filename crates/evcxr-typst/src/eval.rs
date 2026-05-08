@@ -203,14 +203,21 @@ pub(crate) fn run(
         // Watchdog-thread timeout: spawn a thread that kills the child after
         // `effective_timeout` if the main thread hasn't already finished.
         // No tokio: we stay sync at the library boundary (D-023).
+        // WHY two flags: `timed_out` is the stand-down signal (main → watchdog),
+        // `watchdog_fired` is the kill-happened signal (watchdog → main).
+        // We must NOT derive was_timeout from elapsed time: a slow machine
+        // completing just under the threshold would misfire, and an actual
+        // timeout where the child dies early for another reason would miss.
         let timed_out = Arc::new(AtomicBool::new(false));
+        let watchdog_fired = Arc::new(AtomicBool::new(false));
         let watchdog = if let Some(timeout_dur) = effective_timeout {
-            let flag = Arc::clone(&timed_out);
+            let stand_down = Arc::clone(&timed_out);
+            let fired = Arc::clone(&watchdog_fired);
             let handle = context.process_handle();
             Some(thread::spawn(move || {
                 thread::sleep(timeout_dur);
-                if !flag.load(Ordering::Relaxed) {
-                    flag.store(true, Ordering::Relaxed);
+                if !stand_down.load(Ordering::Relaxed) {
+                    fired.store(true, Ordering::Relaxed);
                     handle.lock().unwrap().kill().ok();
                 }
             }))
@@ -220,7 +227,7 @@ pub(crate) fn run(
 
         let exec_result = context.execute(&snippet.src);
 
-        // Signal the watchdog to not kill the process.
+        // Signal the watchdog to stand down before joining.
         timed_out.store(true, Ordering::Relaxed);
         if let Some(wd) = watchdog {
             let _ = wd.join();
@@ -236,9 +243,7 @@ pub(crate) fn run(
         let stdout = collect_pending(&stdout_rx);
         let stderr = collect_pending(&stderr_rx);
 
-        let was_timeout = effective_timeout
-            .map(|t| elapsed >= t.saturating_sub(Duration::from_millis(50)))
-            .unwrap_or(false);
+        let was_timeout = watchdog_fired.load(Ordering::Acquire);
 
         let (outcome, mime_map) = match exec_result {
             Ok(eval_outputs) => {
@@ -262,10 +267,25 @@ pub(crate) fn run(
             }
             Err(evcxr::Error::CompilationErrors(ref errors)) => {
                 tracing::warn!(id = %snippet.id, n = errors.len(), "compile error");
-                let sidecar =
-                    error_capture::classify_compile_error(errors, &snippet.id, &snippet.src);
+                let (sidecar, cross_snippets) = error_capture::classify_compile_error(
+                    errors,
+                    &snippet.id,
+                    &snippet.src,
+                    &offset_map,
+                );
                 if let Err(io) = error_capture::write_error_sidecar(cache_dir, &sidecar, false) {
                     tracing::warn!(id = %snippet.id, error = %io, "failed to write compile error sidecar");
+                }
+                // Write note stubs for any prior snippets referenced by this error (D-014).
+                for (prior_id, prior_src) in &cross_snippets {
+                    let note = error_capture::classify_cross_snippet_note(
+                        prior_id,
+                        prior_src,
+                        &snippet.id,
+                    );
+                    if let Err(io) = error_capture::write_error_sidecar(cache_dir, &note, false) {
+                        tracing::warn!(prior_id = %prior_id, error = %io, "failed to write cross-snippet note sidecar");
+                    }
                 }
                 (SnippetOutcome::CompileError, HashMap::new())
             }
@@ -282,10 +302,11 @@ pub(crate) fn run(
                 {
                     tracing::warn!(id = %snippet.id, error = %io, "failed to write internal sidecar");
                 }
-                // WHY: treat as RuntimePanic here because the snippet did run
-                // but produced an unusual evcxr state change. D-011 says
-                // let bindings are lost; we surface the warning in the doc.
-                (SnippetOutcome::RuntimePanic, HashMap::new())
+                // WHY: Ok, not RuntimePanic — the child process did NOT die;
+                // evcxr just lost type-redefined bindings. RuntimePanic would
+                // cause the T-I05 watch loop to reset CommandContext, which is
+                // wrong here. The warning box is surfaced via the error sidecar.
+                (SnippetOutcome::Ok, HashMap::new())
             }
             Err(evcxr::Error::SubprocessTerminated(ref msg)) => {
                 tracing::warn!(id = %snippet.id, msg = %msg, timeout = was_timeout, "subprocess terminated");

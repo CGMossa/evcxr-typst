@@ -1,9 +1,7 @@
 // Copyright 2026 The evcxr-typst Authors.
 // Licensed under MIT OR Apache-2.0.
 
-//! Capture, classify, and serialize evcxr errors into `<id>.error.json`
-//! sidecars. Kept separate from `eval.rs` so the T-I05 cache layer can land
-//! in `eval.rs` without merge conflicts.
+//! Capture, classify, and serialize evcxr errors into `<id>.error.json` sidecars.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -164,7 +162,7 @@ fn line_col_to_byte_offset(source: &str, line: usize, col: usize) -> usize {
 
 #[allow(clippy::too_many_arguments)]
 fn lines_cols_to_span_ref(
-    current_src: &str,
+    src: &str,
     snippet_id: &str,
     start_line: usize,
     start_col: usize,
@@ -173,12 +171,12 @@ fn lines_cols_to_span_ref(
     label: &str,
     is_cross_snippet: bool,
 ) -> Option<SpanRef> {
-    let byte_start = line_col_to_byte_offset(current_src, start_line, start_col);
-    let byte_end = line_col_to_byte_offset(current_src, end_line, end_col);
-    if byte_start > current_src.len() || byte_end > current_src.len() || byte_start > byte_end {
+    let byte_start = line_col_to_byte_offset(src, start_line, start_col);
+    let byte_end = line_col_to_byte_offset(src, end_line, end_col);
+    if byte_start > src.len() || byte_end > src.len() || byte_start > byte_end {
         return None;
     }
-    let text = current_src[byte_start..byte_end].to_owned();
+    let text = src[byte_start..byte_end].to_owned();
     Some(SpanRef {
         snippet_id: snippet_id.to_owned(),
         byte_start,
@@ -193,25 +191,83 @@ fn lines_cols_to_span_ref(
     })
 }
 
+/// Resolve a span against the current snippet first, then prior submissions.
+///
+/// WHY: evcxr compiles a virtual file containing all committed items plus the
+/// current snippet. Spans that fall outside the current snippet's line range
+/// refer to a prior submission's code — this is the D-014 cross-snippet case.
+/// Heuristic: cumulative line counts, assuming submissions are concatenated
+/// in doc order. This will misattribute if evcxr inserts wrapper lines before
+/// user code; acceptable for v0 per D-014.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn resolve_span(
+    offset_map: &OffsetMap,
+    current_snippet_id: &str,
+    current_src: &str,
+    start_line: usize,
+    start_col: usize,
+    end_line: usize,
+    end_col: usize,
+    label: &str,
+) -> Option<SpanRef> {
+    // Try current snippet first.
+    if let Some(sr) = lines_cols_to_span_ref(
+        current_src,
+        current_snippet_id,
+        start_line,
+        start_col,
+        end_line,
+        end_col,
+        label,
+        false,
+    ) {
+        return Some(sr);
+    }
+    // Span is out-of-bounds for current snippet; search prior submissions
+    // using cumulative line offsets.
+    let mut cum: usize = 0;
+    for sub in &offset_map.submissions {
+        let sub_lines = sub.src.lines().count();
+        if start_line > cum && start_line <= cum + sub_lines {
+            let adj_start = start_line - cum;
+            let adj_end = end_line.saturating_sub(cum).min(sub_lines);
+            if let Some(mut sr) = lines_cols_to_span_ref(
+                &sub.src,
+                &sub.snippet_id,
+                adj_start,
+                start_col,
+                adj_end,
+                end_col,
+                label,
+                true,
+            ) {
+                sr.line_start = start_line;
+                sr.line_end = end_line;
+                return Some(sr);
+            }
+        }
+        cum += sub_lines;
+    }
+    None
+}
+
 fn build_error_entry(
     ce: &CompilationError,
     current_snippet_id: &str,
     current_src: &str,
+    offset_map: &OffsetMap,
 ) -> ErrorEntry {
-    // Primary span: use `primary_spanned_message()` which picks the `is_primary`
-    // flag or falls back to first. The `SpannedMessage.span` field is accessible
-    // even though we cannot name the `Span`/`SpannedMessage` types in signatures.
     let primary_span = ce.primary_spanned_message().and_then(|sm| {
         sm.span.as_ref().and_then(|s| {
-            lines_cols_to_span_ref(
-                current_src,
+            resolve_span(
+                offset_map,
                 current_snippet_id,
+                current_src,
                 s.start_line,
                 s.start_column,
                 s.end_line,
                 s.end_column,
                 &sm.label,
-                false,
             )
         })
     });
@@ -222,15 +278,15 @@ fn build_error_entry(
         .filter(|sm| !sm.is_primary)
         .filter_map(|sm| {
             sm.span.as_ref().and_then(|s| {
-                lines_cols_to_span_ref(
-                    current_src,
+                resolve_span(
+                    offset_map,
                     current_snippet_id,
+                    current_src,
                     s.start_line,
                     s.start_column,
                     s.end_line,
                     s.end_column,
                     &sm.label,
-                    false,
                 )
             })
         })
@@ -241,15 +297,15 @@ fn build_error_entry(
         .iter()
         .map(|sm| {
             let span = sm.span.as_ref().and_then(|s| {
-                lines_cols_to_span_ref(
-                    current_src,
+                resolve_span(
+                    offset_map,
                     current_snippet_id,
+                    current_src,
                     s.start_line,
                     s.start_column,
                     s.end_line,
                     s.end_column,
                     &sm.label,
-                    false,
                 )
             });
             HelpEntry {
@@ -279,11 +335,16 @@ fn build_error_entry(
 // ---------------------------------------------------------------------------
 
 /// Build a compile-error sidecar from a slice of evcxr `CompilationError`s.
+///
+/// Returns the sidecar plus a list of (snippet_id, src) pairs for any prior
+/// snippets whose code was referenced by the error spans (D-014). The caller
+/// is responsible for writing note stubs at those snippet IDs.
 pub(crate) fn classify_compile_error(
     errors: &[CompilationError],
     snippet_id: &str,
     src: &str,
-) -> ErrorSidecar {
+    offset_map: &OffsetMap,
+) -> (ErrorSidecar, Vec<(String, String)>) {
     let rendered_terminal: String = errors
         .iter()
         .filter(|e| e.is_from_user_code())
@@ -297,7 +358,7 @@ pub(crate) fn classify_compile_error(
     let mut entries: Vec<ErrorEntry> = errors
         .iter()
         .filter(|e| e.is_from_user_code())
-        .map(|ce| build_error_entry(ce, snippet_id, src))
+        .map(|ce| build_error_entry(ce, snippet_id, src, offset_map))
         .collect();
 
     // Fall back to all errors when none are from user code (e.g. macro
@@ -305,19 +366,62 @@ pub(crate) fn classify_compile_error(
     if entries.is_empty() {
         entries = errors
             .iter()
-            .map(|ce| build_error_entry(ce, snippet_id, src))
+            .map(|ce| build_error_entry(ce, snippet_id, src, offset_map))
             .collect();
     }
 
-    ErrorSidecar {
-        v: 1,
-        snippet_id: snippet_id.to_owned(),
-        phase: ErrorPhase::Compile,
-        rendered_terminal,
-        recorded_at: rfc3339_now(),
-        snippet_src: src.to_owned(),
-        errors: entries,
+    // Collect unique prior snippet IDs referenced by cross-snippet spans.
+    let mut cross: Vec<(String, String)> = Vec::new();
+    for entry in &entries {
+        let all_spans = entry
+            .primary_span
+            .iter()
+            .chain(entry.secondary_spans.iter());
+        for span in all_spans {
+            if span.is_cross_snippet {
+                let already = cross.iter().any(|(id, _)| id == &span.snippet_id);
+                if !already {
+                    let prior_src = offset_map
+                        .submissions
+                        .iter()
+                        .find(|s| s.snippet_id == span.snippet_id)
+                        .map(|s| s.src.clone())
+                        .unwrap_or_default();
+                    cross.push((span.snippet_id.clone(), prior_src));
+                }
+            }
+        }
     }
+
+    (
+        ErrorSidecar {
+            v: 1,
+            snippet_id: snippet_id.to_owned(),
+            phase: ErrorPhase::Compile,
+            rendered_terminal,
+            recorded_at: rfc3339_now(),
+            snippet_src: src.to_owned(),
+            errors: entries,
+        },
+        cross,
+    )
+}
+
+/// Build a note stub sidecar for a prior snippet A that is referenced by
+/// a cross-snippet error in snippet B (D-014 § 3).
+pub(crate) fn classify_cross_snippet_note(
+    prior_snippet_id: &str,
+    prior_src: &str,
+    referencing_snippet_id: &str,
+) -> ErrorSidecar {
+    classify_internal(
+        &format!(
+            "this item is referenced from snippet {referencing_snippet_id} and is producing errors there"
+        ),
+        "note",
+        prior_snippet_id,
+        prior_src,
+    )
 }
 
 /// Build a runtime-panic sidecar.
@@ -649,70 +753,62 @@ mod tests {
 
     #[test]
     fn test_span_to_bytes_multibyte() {
+        // 🦀 is 4 bytes; columns are byte offsets (matching evcxr's Span).
+        // "let _ = '🦀';\n" is 16 bytes (15 non-newline + 1 newline).
+        let src = "let _ = '\u{1F980}';\nlet y = 2;\n";
+        // Line 2, col 5 should land on 'y' (byte 20).
+        let byte_start = line_col_to_byte_offset(src, 2, 5);
+        let byte_end = line_col_to_byte_offset(src, 2, 6);
+        // Verify we land on a valid codepoint boundary and get the right char.
+        assert!(
+            src.is_char_boundary(byte_start),
+            "byte_start not on char boundary"
+        );
+        assert!(
+            src.is_char_boundary(byte_end),
+            "byte_end not on char boundary"
+        );
+        assert_eq!(&src[byte_start..byte_end], "y");
+    }
+
+    #[test]
+    fn test_resolve_span_current_snippet() {
+        let om = OffsetMap::new();
         let src = "let x = 1;\nlet y = 2;\n";
-        let byte_start = line_col_to_byte_offset(src, 1, 5);
-        let byte_end = line_col_to_byte_offset(src, 1, 6);
-        assert_eq!(&src[byte_start..byte_end], "x");
+        // Line 1, col 5 → 'x'
+        let sr = resolve_span(&om, "snip", src, 1, 5, 1, 6, "").unwrap();
+        assert!(!sr.is_cross_snippet);
+        assert_eq!(sr.text, "x");
     }
 
     #[test]
     fn test_cross_snippet_stub_written() {
+        // Snippet A defines two lines; in evcxr's combined file A occupies lines 1-2.
+        // Snippet B has only 1 line, occupying line 3 in the combined file.
+        // A span at line 2 (within A's range) is out of bounds for src_b (only 1 line),
+        // so resolve_span must detect it as cross-snippet and attribute it to A.
+        let mut om = OffsetMap::new();
+        let src_a = "fn item() {}\nfn other() {}";
+        let src_b = "use_item();";
+        om.record_submission("a", src_a, std::iter::once("item"));
+        // Span at line 2 is in A's second line ("fn other() {}"), out of bounds for src_b.
+        let sr = resolve_span(&om, "b", src_b, 2, 4, 2, 9, "defined here").unwrap();
+        assert!(sr.is_cross_snippet, "expected cross-snippet span");
+        assert_eq!(sr.snippet_id, "a");
+
+        // Verify that classify_cross_snippet_note produces the right sidecar.
         let tmp = TempDir::new().unwrap();
-        let cache_dir = tmp.path();
-
-        let sidecar_b = ErrorSidecar {
-            v: 1,
-            snippet_id: "b".to_owned(),
-            phase: ErrorPhase::Compile,
-            rendered_terminal: String::new(),
-            recorded_at: rfc3339_now(),
-            snippet_src: "use_a_item();".to_owned(),
-            errors: vec![ErrorEntry {
-                severity: "error".to_owned(),
-                code: None,
-                message: "type error".to_owned(),
-                primary_span: Some(SpanRef {
-                    snippet_id: "a".to_owned(),
-                    byte_start: 0,
-                    byte_end: 4,
-                    text: "item".to_owned(),
-                    line_start: 1,
-                    col_start: 1,
-                    line_end: 1,
-                    col_end: 5,
-                    label: "defined here".to_owned(),
-                    is_cross_snippet: true,
-                }),
-                secondary_spans: vec![],
-                helps: vec![],
-                evcxr_hint: None,
-                panic: None,
-                timeout: None,
-                dep: None,
-            }],
-        };
-        write_error_sidecar(cache_dir, &sidecar_b, false).unwrap();
-
-        assert!(cache_dir.join("b.error.json").exists());
-        assert!(cache_dir.join("b.manifest.json").exists());
-
-        let sidecar_a = classify_internal(
-            "this item is referenced from snippet b and is producing errors there",
-            "note",
-            "a",
-            "fn item() {}",
-        );
-        write_error_sidecar(cache_dir, &sidecar_a, false).unwrap();
-        assert!(cache_dir.join("a.error.json").exists());
-
-        let manifest_b: serde_json::Value =
-            serde_json::from_slice(&fs::read(cache_dir.join("b.manifest.json")).unwrap()).unwrap();
+        let note = classify_cross_snippet_note("a", src_a, "b");
+        write_error_sidecar(tmp.path(), &note, false).unwrap();
+        assert!(tmp.path().join("a.error.json").exists());
+        let note_json: serde_json::Value =
+            serde_json::from_slice(&fs::read(tmp.path().join("a.error.json")).unwrap()).unwrap();
+        assert_eq!(note_json["errors"][0]["severity"], "note");
         assert!(
-            manifest_b["extensions"]
-                .as_array()
+            note_json["errors"][0]["message"]
+                .as_str()
                 .unwrap()
-                .iter()
-                .any(|e| e.as_str() == Some("error"))
+                .contains("snippet b")
         );
     }
 
