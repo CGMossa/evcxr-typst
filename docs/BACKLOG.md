@@ -214,9 +214,9 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ### T-I05 · `evcxr-typst watch` + caching
 
-- **Status:** blocked
+- **Status:** open
 - **Phase:** 3
-- **Depends on:** T-I04, T-D05
+- **Depends on:** T-I04 (done), T-D05 (done)
 
 ### T-I06 · Fallback safety + `--allow-eval`
 
@@ -226,9 +226,10 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ### T-I07 · Pretty error rendering
 
-- **Status:** blocked
+- **Status:** done · `phase4/pretty-errors` branch
 - **Phase:** 4
-- **Depends on:** T-D06, T-I04
+- **Depends on:** T-D06 (done), T-I04 (done)
+- **Resolution:** Five error phases (compile, runtime-panic, dep-resolution, timeout, internal) captured in `crates/evcxr-typst/src/error_capture.rs`: `ErrorSidecar` / `ErrorEntry` / `SpanRef` / `OffsetMap` (D-014 cross-snippet attribution) types, `classify_*` constructors, and `write_error_sidecar` which writes `<id>.error.json` and overwrites the manifest with `extensions: ["error"]` (or `["error","txt"]` for panic with partial stdout). `eval.rs` wires a watchdog thread (AtomicBool + `process_handle().lock().unwrap().kill()`) before each `context.execute` for timeouts (D-017 per-snippet wins over global; D-009 30s default). After each Ok result `OffsetMap::record_submission` diffs `defined_item_names()` to track item→snippet provenance for cross-snippet error attribution. `lib.rs` exposes `Snippet::timeout_ms`. `discovery.rs` parses `parse_timeout_ms` (accepts `"30s"`, `"5min"`, `"1000ms"`, integer). `cli.rs` counts non-Ok outcomes and `bail!`s non-zero. `packages/evcxr/error.typ` added: `evcxr-error-box` (header bar colored by severity, source excerpt with caret underline, help messages, cross-snippet footer, evcxr_hint; schema v>1 renders minimal fallback per D-019) and `evcxr-error-note` (cross-snippet stub box). `packages/evcxr/lib.typ` imports `error.typ`, adds `_check-error(id)` (reads manifest, returns parsed error JSON or none), and gates every `_read-*` helper behind it — error box takes precedence over normal output; `rust-data` also emits an error box inline since `rust-data-read` returns a value not content (D-015). Smoke test at `examples/errors/main.typ` exercises compile error, panic, and dep failure. Known limitation: caret underline uses `h(col * 0.6em)` approximation (documented in error.typ comment).
 
 ---
 
