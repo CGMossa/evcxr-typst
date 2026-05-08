@@ -27,6 +27,25 @@
   options: options,
 ))<evcxr-snippet>]
 
+// Phase 1 (T-I03): the CLI invokes
+//   typst compile --input evcxr-mode=read --input evcxr-cache=<abs-path> ...
+// after writing sidecars; everything else (bare `typst compile`, watch's
+// pre-eval pass) leaves `evcxr-mode` unset and lands in the fallback branch
+// so a missing sidecar never aborts the build (D-004). Auto-id lookup is a
+// Phase 3 cache concern — until then, an unpinned snippet always renders
+// the placeholder even after `evcxr-typst run` has populated the cache.
+#let _evcxr-mode = sys.inputs.at("evcxr-mode", default: "fallback")
+#let _evcxr-cache = sys.inputs.at("evcxr-cache", default: "")
+
+#let _read-stdout(kind, id) = {
+  if id == none or _evcxr-mode != "read" or _evcxr-cache == "" {
+    fallback.placeholder(kind, id)
+  } else {
+    let bytes = read(_evcxr-cache + "/" + str(id) + ".txt")
+    raw(str(bytes), block: true)
+  }
+}
+
 #let setup(
   min-cli: none,
   default-render: "both",
@@ -48,12 +67,13 @@
   _emit-snippet("rust", src, id, deps, (
     render: render, timeout: timeout, caption: caption,
   ))
-  fallback.placeholder("rust", id)
+  raw(_src-text(src), lang: "rust", block: true)
+  _read-stdout("rust", id)
 }
 
 #let rust-out(src, id: none, deps: (), timeout: auto) = {
   _emit-snippet("rust-out", src, id, deps, (timeout: timeout))
-  fallback.placeholder("rust-out", id)
+  _read-stdout("rust-out", id)
 }
 
 #let rust-display(src, id: none, deps: (), prefer: auto, timeout: auto) = {

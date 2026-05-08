@@ -68,7 +68,7 @@ ADR-lite log. Append-only. Each entry: status (proposed | accepted | superseded)
 
 **Status:** proposed · 2026-05-06
 
-**Decision (proposed):** while building Phase 1 we use `evcxr = { path = "../evcxr/evcxr" }`. Before we cut a release we pin to a published evcxr version and document that as the minimum.
+**Decision (proposed):** while building Phase 1 we use `evcxr = { path = "../../.evcxr/evcxr" }` (resolved from `crates/evcxr-typst/Cargo.toml`), pointing at the in-repo `.evcxr/` checkout (gitignored; `origin = CGMossa/evcxr`, `upstream = evcxr/evcxr`). Before we cut a release we pin to a published evcxr version and document that as the minimum.
 
 **Rationale:** evcxr's API may need small adjustments (e.g. better hooks for capturing display output); easier to iterate against a local checkout. But shipping `evcxr-typst` to crates.io requires a published baseline.
 
@@ -369,7 +369,7 @@ The cache directory sits at the workspace level (alongside the `.typ` source), g
 
 **Consequences:** T-I01's scaffolding needs minor refactor (move clap parsing into a `cli` module, expose the eval pipeline via `lib.rs`) — handled as part of T-L01 below. `crates/evcxr-typst/examples/library_use.rs` ships as the canonical embedder example, mirroring evcxr's `example_eval.rs`. `thiserror` becomes a library dependency (small).
 
-**Reference:** `docs/design/library-api.md`; `/Users/elea/Documents/GitHub/evcxr/evcxr/examples/example_eval.rs` (precedent); D-004 (allow-eval safety surfaces in `EvalOptions::deny() / ::allow_eval()`); D-017 (timeout, hidden behind `EvalOptions::with_snippet_timeout`).
+**Reference:** `docs/design/library-api.md`; `.evcxr/evcxr/examples/example_eval.rs` (precedent); D-004 (allow-eval safety surfaces in `EvalOptions::deny() / ::allow_eval()`); D-017 (timeout, hidden behind `EvalOptions::with_snippet_timeout`).
 
 ---
 

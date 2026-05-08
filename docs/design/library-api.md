@@ -12,7 +12,7 @@ The CLI's logical phases (discover → evaluate → write sidecars → render) m
 
 ## Existing precedent
 
-evcxr itself ships a library API used by the Jupyter kernel and the REPL — see `evcxr_jupyter/src/main.rs` and `evcxr_repl/src/repl.rs` for two embedders, and `/Users/elea/Documents/GitHub/evcxr/evcxr/examples/example_eval.rs` for the canonical "library use" example:
+evcxr itself ships a library API used by the Jupyter kernel and the REPL — see `evcxr_jupyter/src/main.rs` and `evcxr_repl/src/repl.rs` for two embedders, and `.evcxr/evcxr/examples/example_eval.rs` for the canonical "library use" example:
 
 ```rust
 // abridged from evcxr/examples/example_eval.rs
@@ -186,6 +186,6 @@ After 1.0: standard SemVer.
 ## References
 
 - `crates/evcxr-typst/CLAUDE.md` — current crate guidance (will need updating once `lib.rs` lands).
-- `/Users/elea/Documents/GitHub/evcxr/evcxr/examples/example_eval.rs` — the precedent.
+- `.evcxr/evcxr/examples/example_eval.rs` — the precedent.
 - `docs/DECISIONS.md` D-004 (allow-eval safety), D-010 (cache layout), D-017 (timeout), D-018 (multi-file model — single-entry in v0).
 - `docs/design/cache.md`, `docs/design/watch-loop.md` — implementation details that stay private.

@@ -8,18 +8,20 @@ Integration project gluing [evcxr](https://github.com/evcxr/evcxr) (Rust eval-co
 
 ## Working with the evcxr source
 
-evcxr is a **dependency**, not part of this repo. The local clone lives at `/Users/elea/Documents/GitHub/evcxr` and is treated as **read-only**.
+evcxr is a **dependency**, not part of this repo. A local clone is kept inside the repo at `.evcxr/` (gitignored) and is treated as **read-only**. The `origin` remote on that clone is `CGMossa/evcxr` (the user's fork — see D-025); `upstream` is `evcxr/evcxr`. Both are checked out at `main` by default.
 
-- When you need to look at evcxr internals, read files at that absolute path. Add it as an extra Claude Code working directory if you'll need it for the session: `claude --add-dir /Users/elea/Documents/GitHub/evcxr`.
+If `.evcxr/` (or the sibling `.prequery/` / `.typst-wasm-minimal-protocol/` reference checkouts) is missing on a fresh setup, run `just clone-refs` from the repo root.
+
+- When you need to look at evcxr internals, read files under `.evcxr/`. The path-dep in `crates/evcxr-typst/Cargo.toml` resolves there too (`../../.evcxr/evcxr`).
 - That clone has its own `CLAUDE.md` summarizing evcxr's architecture — read it once before doing anything that touches the evcxr API. The big-picture map: `CommandContext` → `EvalContext` → `Module` → `ChildProcess`, plus the `runtime_hook()` re-entry trick (any binary that depends on evcxr must call it on startup) and the `EVCXR_BEGIN_CONTENT <mime>` MIME output protocol.
-- Do **not** copy evcxr code into this repo. Depend on it via `path = "../evcxr/evcxr"` for local dev, or `evcxr = "<version>"` from crates.io once we settle on a published baseline (see `docs/DECISIONS.md` D-006).
+- Do **not** copy evcxr code into this repo. During dev we depend on it via `path = "../../.evcxr/evcxr"` (from `crates/evcxr-typst/Cargo.toml`); once we settle on a published baseline we switch to `evcxr = "<version>"` from crates.io. See `docs/DECISIONS.md` D-006.
 - If something in evcxr's public API needs to change for our use case, propose a patch upstream rather than working around it here.
 
 ### The `CGMossa/evcxr` fork (D-025)
 
 There is a personal fork at <https://github.com/CGMossa/evcxr> with nine feature branches / PRs queued against the fork's own `main` (PRs #1–#9 — see `docs/DECISIONS.md` D-025 for the full table and rationale). Read that table before assuming a referenced evcxr feature is in upstream. Two are likely load-bearing for `evcxr-typst` features later: #8 (compiler warnings surfaced in `EvalOutputs.warnings`) and #5 (`:patch` for `[patch.crates-io]` deps).
 
-The fork is a **staging ground**, not a substitute upstream. The local `/Users/elea/Documents/GitHub/evcxr` checkout is still on `main` (read-only). Only switch the path-dep to a fork branch when a specific `evcxr-typst` task genuinely needs that change — and document the dependency switch in the task's commit. When a fork PR upstreams, amend D-025 to drop that row.
+The fork is a **staging ground**, not a substitute upstream. The in-repo `.evcxr/` checkout is still on `main` (read-only). Only switch the path-dep to a fork branch when a specific `evcxr-typst` task genuinely needs that change — and document the dependency switch in the task's commit. When a fork PR upstreams, amend D-025 to drop that row.
 
 If you propose a *new* evcxr-side change while working on `evcxr-typst`, the workflow is: open a PR against `CGMossa/evcxr` `main` (not `evcxr/evcxr`) — the user has READ-only on upstream, and "just go" / "don't stop" is **not** authorization to publish to upstream. Add a row to D-025 for the new PR.
 

@@ -1,23 +1,36 @@
 # CLAUDE.md — `crates/evcxr-typst/`
 
-The Rust CLI. Single binary, three subcommands (`run`, `watch`, `clean`), drives the whole prequery loop.
+Both the Rust CLI (`evcxr-typst` binary; three subcommands `run`, `watch`, `clean`) and the public library API (`evcxr_typst::*`) that other hosts can embed. Single crate, two targets — see **D-023** and `docs/design/library-api.md`.
+
+```
+src/
+  lib.rs   — public API surface (Project, EvalOptions, EvalCallbacks, …)
+  main.rs  — 9-line binary entry: runtime_hook() then cli::run()
+  cli.rs   — binary-only clap layer; library never sees clap
+examples/
+  library_use.rs — canonical embedder; mirrors evcxr's example_eval.rs
+```
 
 ## Status
 
-Scaffolding only. `main.rs` parses CLI args and exits with an "unimplemented" message. Real implementation is queued as **T-I01..T-I07** in `../../docs/BACKLOG.md`.
+API surface landed (T-L01). Method bodies still stub to `Err(Error::NotImplemented(<method>))`. Real eval logic lands in **T-I03** onward; subsequent tasks must populate the library entry points (`Project::evaluate`, `Project::watch`, `Project::clean_view`) and keep `main.rs` / `cli.rs` thin — every code path goes through the library API.
 
 ## Critical invariants
 
-- **`evcxr::runtime_hook()` must be the very first thing in `main`.** Before clap, before logging init, before anything. evcxr re-enters this binary as a host child process or rustc wrapper depending on env vars — if anything else runs first, that path breaks silently. See `/Users/elea/Documents/GitHub/evcxr/evcxr/src/runtime.rs`.
-- **evcxr is a path dependency** (`../../../evcxr/evcxr`) per **D-006**. Don't switch to crates.io until the release pinning task explicitly says so.
+- **`evcxr::runtime_hook()` must be the very first thing in `main`.** Before clap, before logging init, before anything. evcxr re-enters this binary as a host child process or rustc wrapper depending on env vars — if anything else runs first, that path breaks silently. See `.evcxr/evcxr/src/runtime.rs`. The library never calls `runtime_hook` itself — the embedder must (D-023). Both `main.rs` and `examples/library_use.rs` model the contract.
+- **evcxr is a path dependency** (`../../.evcxr/evcxr`, from this Cargo.toml) per **D-006** / **D-025**. Don't switch to crates.io until the release pinning task explicitly says so.
+- **Library is clap-free.** clap stays in `src/cli.rs` (binary-only). If you find yourself wanting `clap::Args` in `lib.rs`, push the parsed values across the boundary as plain types instead.
+- **`#![warn(missing_docs)]` on `lib.rs`.** Every new `pub` item needs rustdoc; CI surfaces a warning otherwise. `cargo doc -p evcxr-typst --no-deps` should stay clean.
 
 ## Build / test
 
 From the repo root:
 
 ```sh
-cargo build -p evcxr-typst
+cargo build -p evcxr-typst --all-targets   # lib + bin + library_use example
 cargo run -p evcxr-typst -- --help
+cargo run -p evcxr-typst --example library_use -- path/to/main.typ
+cargo doc -p evcxr-typst --no-deps         # must stay missing-docs-warning-clean
 cargo test -p evcxr-typst
 ```
 
