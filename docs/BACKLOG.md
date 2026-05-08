@@ -76,9 +76,9 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 - **Phase:** 0 (design)
 - **Depends on:** —
 - **Reference reads:**
-  - `/Users/elea/Documents/GitHub/evcxr/COMMON.md` (whole file — variable persistence, `:dep`, references)
-  - `/Users/elea/Documents/GitHub/evcxr/evcxr/src/eval_context.rs` (skim `ContextState`, item/var tracking)
-  - `/Users/elea/Documents/GitHub/evcxr/evcxr/src/use_trees.rs` (how `use` statements are merged)
+  - `.evcxr/COMMON.md` (whole file — variable persistence, `:dep`, references)
+  - `.evcxr/evcxr/src/eval_context.rs` (skim `ContextState`, item/var tracking)
+  - `.evcxr/evcxr/src/use_trees.rs` (how `use` statements are merged)
   - `docs/ARCHITECTURE.md` § "Composition across snippets" in this repo
 - **Briefing:** Design how Rust constructs compose across Typst snippets. Specifically: `struct`/`enum`/`trait`/`impl`/`fn`/`mod`/`use`/`let` defined in snippet A and consumed in snippet B (where B may be many snippets later, on a different page). Document what evcxr already gives us for free (most of it) and where the gaps are. Cover at minimum: (1) the persistence behavior of each construct kind; (2) the variable-reference limitation and how we surface it to writers; (3) cross-snippet macros (`macro_rules!` works; external `#[macro_use]` does not — confirm); (4) what happens when a later snippet redefines an item; (5) `mod foo;` (file-based modules) — does that even make sense in this context, and if so how do paths resolve?
 - **Output:** `docs/design/snippet-semantics.md` covering the matrix of constructs, the rules, examples of each, and a list of "things that look like they should work but don't" with a recommendation for each (error nicely vs. document vs. work around).
@@ -92,7 +92,7 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 - **Phase:** 0 (design)
 - **Depends on:** —
 - **Reference reads:**
-  - `/Users/elea/Documents/GitHub/evcxr/evcxr_jupyter/samples/evcxr_jupyter_tour.ipynb` (gold standard for "what kinds of things do people do in a Rust notebook")
+  - `.evcxr/evcxr_jupyter/samples/evcxr_jupyter_tour.ipynb` (gold standard for "what kinds of things do people do in a Rust notebook")
   - `docs/ARCHITECTURE.md` (full)
   - `docs/PLAN.md` § Phase 1, Phase 2
 - **Briefing:** Design the example gallery — concrete `.typ` documents that show off the integration. Each example should have a clear "this is the feature being shown" focus, and the set together should cover the spectrum from trivial to ambitious. Required scenarios: (a) hello world (println), (b) define a struct in one snippet, use it pages later, (c) define a module and use items from it, (d) generate a plot/image and embed it inline, (e) pull a `:dep` and use a real third-party crate, (f) async/await with tokio runtime, (g) an error case (compile error inside a snippet) — what does the rendered doc look like, (h) ambitious: a small "report" with five interleaved snippets where each builds on the last (a mini data-analysis with computed tables). For each: write the *intended* `.typ` source assuming the package and CLI exist, and a paragraph of prose explaining what it demonstrates.
@@ -107,8 +107,8 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 - **Phase:** 0 (design)
 - **Depends on:** T-D02 (need example syntax to validate naming)
 - **Reference reads:**
-  - `/Users/elea/Documents/GitHub/evcxr/.prequery/README.md` and `.prequery/src/` (look at the package API there; it's a good model)
-  - `/Users/elea/Documents/GitHub/evcxr/.typst-wasm-minimal-protocol/examples/hello_rust/` (just for Typst-side ergonomics)
+  - `.prequery/README.md` and `.prequery/src/` (look at the package API there; it's a good model)
+  - `.typst-wasm-minimal-protocol/examples/hello_rust/` (just for Typst-side ergonomics)
   - `docs/design/examples/` (output of T-D02 — the API has to make those examples readable)
   - Typst docs on `metadata`, `query`, `raw`, `image`, `cbor`, `json` (already mostly familiar)
 - **Briefing:** Design the public API of the `packages/evcxr/` Typst package. Function names, signatures, defaults, output shape. Decide on: how do users pass code (raw blocks vs strings), how is an explicit ID specified, how does the package surface plain stdout vs display output vs both, what's the fallback rendering, what configuration is package-level (a `setup()` call?) vs per-call. Bikeshed naming a little — `rust()` vs `evcxr()` vs `eval()` matters because it's user-facing.
@@ -139,7 +139,7 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 - **Reference reads:**
   - `docs/ARCHITECTURE.md` § "Watch loop"
   - `docs/DECISIONS.md` D-003 (linear re-eval policy)
-  - `/Users/elea/Documents/GitHub/evcxr/evcxr/src/command_context.rs` (what state-reset operations are available — `:clear`, etc.)
+  - `.evcxr/evcxr/src/command_context.rs` (what state-reset operations are available — `:clear`, etc.)
 - **Briefing:** Detailed algorithm for `evcxr-typst watch`. Pseudocode for the change loop. Address: how do we tell `typst watch` (running as a child) about sidecar updates (mtime should suffice — verify), how do we debounce file events from multiple editors, what happens on transient parse errors in the `.typ` file, how do we shut down cleanly, what's logged where. Concrete rules for the change classification mentioned in ARCHITECTURE.md (added-at-end / removed-at-end / leaf-modified / non-leaf-modified). Define "leaf" precisely — does a snippet that only `println!`s but inside its body declares a `let` count as a leaf? (Answer: yes, because `let` inside a block doesn't escape.)
 - **Output:** `docs/design/watch-loop.md` with pseudocode and the classification rules.
 - **Done when:** the file exists; pseudocode is specific enough that someone implementing it doesn't have open design questions; classification rules cover the cases listed plus at least three I haven't anticipated.
@@ -152,8 +152,8 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 - **Phase:** 0 (design)
 - **Depends on:** T-D03 (need to know how the package surfaces things)
 - **Reference reads:**
-  - `/Users/elea/Documents/GitHub/evcxr/evcxr/src/errors.rs` (compilation error structure, spans)
-  - `/Users/elea/Documents/GitHub/evcxr/evcxr_repl/src/bin/evcxr.rs` (how the REPL renders errors with `ariadne`)
+  - `.evcxr/evcxr/src/errors.rs` (compilation error structure, spans)
+  - `.evcxr/evcxr_repl/src/bin/evcxr.rs` (how the REPL renders errors with `ariadne`)
   - `docs/design/package-api.md` once T-D03 is done
 - **Briefing:** Design how compilation/runtime errors from evcxr surface in the rendered Typst document. Cover: (1) compile error in a single snippet — what does the rendered box look like? (2) error in snippet A that surfaces only when snippet B uses item X (declared in A) — how do we attribute the error and where do we point? (3) panic at runtime — output partially captured? (4) `:dep` resolution failure — pre-snippet error, attached where? (5) snippet times out (do we even have a timeout?). Decide on the sidecar shape for errors and how the package displays them. Compare error rendering to `ariadne` (what evcxr's REPL uses) and decide if we mimic it or do something Typst-native.
 - **Output:** `docs/design/errors.md`.
@@ -183,10 +183,10 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ### T-L01 · Library API: split `lib.rs` + `main.rs` and expose the public surface
 
-- **Status:** open
+- **Status:** done · `crates/evcxr-typst/{Cargo.toml,src/lib.rs,src/main.rs,src/cli.rs,examples/library_use.rs}`
 - **Phase:** 1 (precedes T-I03)
 - **Depends on:** T-I01 done
-- **Reference reads:** `docs/design/library-api.md` (full file); `docs/DECISIONS.md` D-023 (the decision); `/Users/elea/Documents/GitHub/evcxr/evcxr/examples/example_eval.rs` (the precedent)
+- **Reference reads:** `docs/design/library-api.md` (full file); `docs/DECISIONS.md` D-023 (the decision); `.evcxr/evcxr/examples/example_eval.rs` (the precedent)
 - **Briefing:** Refactor `crates/evcxr-typst/` to expose a public library API per D-023. Concrete steps:
   - Create `lib.rs` exporting `Project`, `EvalOptions`, `WatchOptions`, `WatchHandle`, `EvaluationReport`, `Snippet`, `SnippetOutcome`, `SnippetResult`, `EvalCallbacks` trait, `Error` (a `thiserror`-derived enum), and any supporting types per `docs/design/library-api.md` § "Public API surface".
   - Move clap parsing into a `cli` module under `main.rs` (or a dedicated `bin/` if cleaner). Library is clap-free.
@@ -194,20 +194,22 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
   - Add `crates/evcxr-typst/examples/library_use.rs` mirroring evcxr's `example_eval.rs` shape — calls `evcxr::runtime_hook()` first, then opens a project, then prints the snippet list. Will compile but `Project::evaluate()` returns `NotImplemented` until T-I03.
   - Add `thiserror = "1"` to `[dependencies]`.
 - **Done when:** `cargo build -p evcxr-typst --all-targets` is clean (binary, library, and library_use example all build); `cargo doc -p evcxr-typst` produces docs without missing-doc warnings on public items; the `library_use` example compiles and runs (errors out cleanly with NotImplemented when `Project::evaluate` is called).
+- **Resolution:** Public surface landed per D-023 / `docs/design/library-api.md`: `Project` (open / open_with_config / entry / snippets / evaluate / watch / clean_view), `EvalOptions` (deny / allow_eval / with_snippet_timeout / with_callbacks / with_env_passthrough / is_allowed), `EvalCallbacks` trait (5 lifecycle hooks), `WatchOptions`, `WatchHandle::join`, `EvaluationReport`, `Snippet` + `SnippetKind` (8 variants incl. `RustMain` for D-024), `SnippetResult`, `SnippetOutcome` (7 variants), `ResolvedDep`, `DepError`, `ProjectConfig`, and a `thiserror`-derived `Error { NotImplemented(&'static str), Io(#[from] io::Error) }`. All bodies are `Err(Error::NotImplemented(<method>))` stubs. `main.rs` is now a 9-line wrapper that calls `evcxr::runtime_hook()` then `cli::run()`; clap lives in `src/cli.rs`, the binary's only module — library is clap-free. Verified: `cargo build -p evcxr-typst --all-targets` clean, `cargo clippy --all-targets -D warnings` clean, `cargo doc --no-deps` clean (no missing-docs warnings), `cargo fmt --check` clean. `cargo run -p evcxr-typst --example library_use -- /tmp/dummy.typ` exits 1 with `Error: not yet implemented: Project::evaluate`. `cargo run -p evcxr-typst -- run /tmp/dummy.typ` does the same via the binary path.
 
 ### T-I03 · `evcxr-typst run` end-to-end smoke
 
-- **Status:** blocked
+- **Status:** done · `crates/evcxr-typst/src/{lib.rs,cli.rs,discovery.rs,eval.rs,identity.rs,main.rs}`, `crates/evcxr-typst/examples/library_use.rs`, `packages/evcxr/lib.typ`, `examples/hello/main.typ`
 - **Phase:** 1
 - **Depends on:** T-I01, T-I02, **T-L01** (real bodies populate the library API stubs)
 - **Reference reads:** `docs/design/library-api.md` (the API to fill in); existing Phase 0 design docs (architecture, package-api, multi-file)
 - **Done when:** matches PLAN.md Phase 1 "Done when". Plus: every code path runs through the library API; `main.rs` is a thin caller; the `library_use` example produces equivalent output to `evcxr-typst run`.
+- **Resolution:** `Project::open` shells out to `typst query --field value <entry> '<evcxr-snippet>'`, parses the JSON, and resolves snippet IDs per D-007 (blake3 → base32-lower → 12 chars, with occurrence-index suffix on collision). `Project::evaluate` drives one `evcxr::CommandContext` through every evaluable snippet sequentially, captures stdout via two forwarder threads bridging evcxr's `crossbeam_channel::Receiver`s into private `std::sync::mpsc` channels (necessary because `EvalContext::try_run_statements` busy-waits for `stdout_sender.is_empty()` before returning — without a continuous drainer, the *first* snippet that prints anything deadlocks `execute()`), and writes one `<id>.txt` sidecar per `Ok` snippet at `<entry-parent>/.evcxr-typst-cache/`. Phase 1 limitation: the package's `rust(...)` only renders captured output when an explicit `id:` is pinned, gated on `--input evcxr-mode=read --input evcxr-cache=<typst-abs-path>` (both set by the CLI; bare `typst compile` falls through to the placeholder so D-004 still holds). The CLI's `Run` subcommand calls `Project::evaluate` then shells out to `typst compile` with those inputs and `--root` propagated; `examples/library_use.rs` mirrors the same flow through the library API. Three-snippet hello example (`examples/hello/main.typ`) round-trips: snippet 1 binds `let answer = 6 * 7`, snippet 2 prints `twice the answer = 84` (proving cross-snippet state via evcxr's `committed_state`), snippet 3 defines and calls `fn shout`. `cargo run -p evcxr-typst -- run examples/hello/main.typ --allow-eval --root .` and `cargo run -p evcxr-typst --example library_use -- examples/hello/main.typ .` both produce identical sidecars and a 36 KB PDF rendering all three captured outputs. Tracing/log control via `EVCXR_TYPST_LOG=evcxr_typst=debug` (falls back to `RUST_LOG`). Quality gates: `cargo build --all-targets`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `cargo doc --no-deps`, and `cargo test --lib` all clean.
 
 ### T-I04 · MIME passthrough
 
-- **Status:** blocked
+- **Status:** open
 - **Phase:** 2
-- **Depends on:** T-I03
+- **Depends on:** T-I03 (done)
 
 ### T-I05 · `evcxr-typst watch` + caching
 
@@ -273,7 +275,7 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 - **Status:** open
 - **Track:** Semantic Typst
 - **Depends on:** main-plan **T-I03** (sidecar plumbing must exist) · D-020
-- **Reference reads:** `docs/tracks/semantic-typst.md` (whole file), `/Users/elea/Documents/GitHub/evcxr/evcxr/src/rust_analyzer.rs` (the source of the data), `/Users/elea/Documents/GitHub/evcxr/evcxr/src/eval_context.rs` (search for `analyzer.` to see how it's accessed today)
+- **Reference reads:** `docs/tracks/semantic-typst.md` (whole file), `.evcxr/evcxr/src/rust_analyzer.rs` (the source of the data), `.evcxr/evcxr/src/eval_context.rs` (search for `analyzer.` to see how it's accessed today)
 - **Briefing:** After each snippet the CLI evaluates, query the embedded `RustAnalyzer` for declared items and committed bindings; serialize to CBOR and write `<id>.semantic.cbor` per the schema sketched in `tracks/semantic-typst.md`. Add Typst-package functions `type-of(name)`, `signature-of(name)`, `kind-of(name)` reading the sidecar; `none`/placeholder fallback when missing (D-015 model). The `<id>.semantic.cbor` file becomes the project's fifth versioned interface — register it in `docs/design/schema-versioning.md` § "tracked interfaces" and start it at `v: 1`.
 - **Done when:** the gallery `b-struct-across-snippets.typ` example renders inline `type-of` / `signature-of` references that resolve to actual rust-analyzer-emitted strings after `evcxr-typst run --allow-eval`. Bare `typst compile` of the same doc still succeeds, with placeholder boxes where references would resolve.
 
@@ -301,7 +303,7 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 - **Depends on:** — (independent of main path; can run any time)
 - **Reference reads:**
   - `docs/design/wasm-plugin-analyzer.md` § "Mechanism: how we'd actually depend on the fork" (full story: patch-leakage, isolated `[workspace]`, pinned `rev`, `0.0.x` semver fragility)
-  - `/Users/elea/Documents/GitHub/evcxr/.typst-wasm-minimal-protocol/examples/hello_rust/Cargo.toml` (the canonical isolation pattern: bottom `[workspace]` block plus WASM-tuned `[profile.release]`)
+  - `.typst-wasm-minimal-protocol/examples/hello_rust/Cargo.toml` (the canonical isolation pattern: bottom `[workspace]` block plus WASM-tuned `[profile.release]`)
   - `cgmossa/rust-analyzer` branch `wasm`, commit `8a79b99` — verify it exists, capture the actual full commit SHA for pinning
 - **Briefing:** Hard time-box: **one engineering day**. Smallest possible WASM build that exercises the actual mechanism we'd use for T-S04:
   - Create `crates/evcxr-typst-analyzer/` with its own `Cargo.toml` ending in a `[workspace]` block (so the parent `evcxr-typst` workspace doesn't see this crate).

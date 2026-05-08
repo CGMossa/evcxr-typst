@@ -6,7 +6,7 @@ Exploratory design. Does **not** supersede the prequery architecture (D-001) —
 
 ## The seed
 
-[`cgmossa/rust-analyzer`](https://github.com/CGMossa/rust-analyzer) `wasm` branch (commit `8a79b99`, AI disclosure attached) carries patches that get the rust-analyzer crate set compiling to WebAssembly. Typst since 0.8 supports WASM plugins via a tightly-scoped byte-in/byte-out protocol (`/Users/elea/Documents/GitHub/evcxr/.typst-wasm-minimal-protocol/`). Question: can those two combine to do part of evcxr-typst's job inside the Typst sandbox?
+[`cgmossa/rust-analyzer`](https://github.com/CGMossa/rust-analyzer) `wasm` branch (commit `8a79b99`, AI disclosure attached) carries patches that get the rust-analyzer crate set compiling to WebAssembly. Typst since 0.8 supports WASM plugins via a tightly-scoped byte-in/byte-out protocol (`.typst-wasm-minimal-protocol/`). Question: can those two combine to do part of evcxr-typst's job inside the Typst sandbox?
 
 ## What rust-analyzer-in-WASM actually buys us
 
@@ -55,7 +55,7 @@ packages/
 
 The `evcxr-typst-analyzer` crate:
 
-- Depends on the same `ra_ap_*` crates evcxr already pulls (`/Users/elea/Documents/GitHub/evcxr/evcxr/Cargo.toml` lists `ra_ap_ide`, `ra_ap_ide_db`, `ra_ap_hir`, `ra_ap_syntax`, `ra_ap_span`, `ra_ap_paths`, `ra_ap_base_db`, `ra_ap_vfs` — all at `0.0.307`).
+- Depends on the same `ra_ap_*` crates evcxr already pulls (`.evcxr/evcxr/Cargo.toml` lists `ra_ap_ide`, `ra_ap_ide_db`, `ra_ap_hir`, `ra_ap_syntax`, `ra_ap_span`, `ra_ap_paths`, `ra_ap_base_db`, `ra_ap_vfs` — all at `0.0.307`).
 - Uses the `cgmossa/rust-analyzer` wasm fork's patches to produce WASM-compatible builds of those crates.
 - Bundles a precomputed "stdlib summary" so name/type resolution works without a sysroot. (Existing prior art: rust-analyzer-wasm playgrounds do this.)
 - Exposes one or two `#[wasm_func]` entry points: `analyze(snippet_cbor) -> diagnostics_cbor` and possibly `merge_and_analyze(prior_items_cbor, snippet_cbor) -> diagnostics_cbor` for cross-snippet awareness.
@@ -92,7 +92,7 @@ ra_ap_syntax   = { git = "https://github.com/CGMossa/rust-analyzer", rev = "8a79
 
 `[patch.crates-io]` placed in our root `Cargo.toml` would apply to the *entire* dependency graph of the workspace, including the path-dep on `evcxr` (which has its own published-`ra_ap_*` consumers for type-inference and tab-completion). If the fork's API differs from upstream `0.0.307` at all, applying the patch at the workspace root breaks evcxr's own functionality for the whole project — just to support a sibling WASM build that nothing on the main path needs.
 
-Mitigation: **isolate `crates/evcxr-typst-analyzer/` into its own Cargo workspace.** Append a `[workspace]` block to its `Cargo.toml`, exactly like the wasm-minimal-protocol example does (`/Users/elea/Documents/GitHub/evcxr/.typst-wasm-minimal-protocol/examples/hello_rust/Cargo.toml`):
+Mitigation: **isolate `crates/evcxr-typst-analyzer/` into its own Cargo workspace.** Append a `[workspace]` block to its `Cargo.toml`, exactly like the wasm-minimal-protocol example does (`.typst-wasm-minimal-protocol/examples/hello_rust/Cargo.toml`):
 
 ```toml
 # crates/evcxr-typst-analyzer/Cargo.toml — bottom
@@ -126,7 +126,7 @@ panic = 'abort'
 [workspace]    # so that it is not included in the upper workspace
 ```
 
-We'd match that profile and the workspace-isolation comment verbatim. Verified by inspecting `/Users/elea/Documents/GitHub/evcxr/.typst-wasm-minimal-protocol/examples/hello_rust/Cargo.toml`.
+We'd match that profile and the workspace-isolation comment verbatim. Verified by inspecting `.typst-wasm-minimal-protocol/examples/hello_rust/Cargo.toml`.
 
 ## Hard parts and risks
 
@@ -174,8 +174,8 @@ Answered in part by the Mechanism section above; the remainder:
 
 ## Reference
 
-- Wasm protocol spec: `/Users/elea/Documents/GitHub/evcxr/.typst-wasm-minimal-protocol/README.md`, examples at `.typst-wasm-minimal-protocol/examples/hello_rust/`.
+- Wasm protocol spec: `.typst-wasm-minimal-protocol/README.md`, examples at `.typst-wasm-minimal-protocol/examples/hello_rust/`.
 - Fork seed: `cgmossa/rust-analyzer` branch `wasm`, commit `8a79b99`.
-- evcxr's existing rust-analyzer integration: `/Users/elea/Documents/GitHub/evcxr/evcxr/src/rust_analyzer.rs` (already uses `ra_ap_*` for type inference and tab completion in evcxr's own context).
+- evcxr's existing rust-analyzer integration: `.evcxr/evcxr/src/rust_analyzer.rs` (already uses `ra_ap_*` for type inference and tab completion in evcxr's own context).
 - D-001 (why prequery) — unchanged by this analysis.
 - D-004 (fallback by default) — strengthened by this option if implemented.

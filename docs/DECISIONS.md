@@ -68,7 +68,7 @@ ADR-lite log. Append-only. Each entry: status (proposed | accepted | superseded)
 
 **Status:** proposed · 2026-05-06
 
-**Decision (proposed):** while building Phase 1 we use `evcxr = { path = "../evcxr/evcxr" }`. Before we cut a release we pin to a published evcxr version and document that as the minimum.
+**Decision (proposed):** while building Phase 1 we use `evcxr = { path = "../../.evcxr/evcxr" }` (resolved from `crates/evcxr-typst/Cargo.toml`), pointing at the in-repo `.evcxr/` checkout (gitignored; `origin = CGMossa/evcxr`, `upstream = evcxr/evcxr`). Before we cut a release we pin to a published evcxr version and document that as the minimum.
 
 **Rationale:** evcxr's API may need small adjustments (e.g. better hooks for capturing display output); easier to iterate against a local checkout. But shipping `evcxr-typst` to crates.io requires a published baseline.
 
@@ -369,7 +369,7 @@ The cache directory sits at the workspace level (alongside the `.typ` source), g
 
 **Consequences:** T-I01's scaffolding needs minor refactor (move clap parsing into a `cli` module, expose the eval pipeline via `lib.rs`) — handled as part of T-L01 below. `crates/evcxr-typst/examples/library_use.rs` ships as the canonical embedder example, mirroring evcxr's `example_eval.rs`. `thiserror` becomes a library dependency (small).
 
-**Reference:** `docs/design/library-api.md`; `/Users/elea/Documents/GitHub/evcxr/evcxr/examples/example_eval.rs` (precedent); D-004 (allow-eval safety surfaces in `EvalOptions::deny() / ::allow_eval()`); D-017 (timeout, hidden behind `EvalOptions::with_snippet_timeout`).
+**Reference:** `docs/design/library-api.md`; `.evcxr/evcxr/examples/example_eval.rs` (precedent); D-004 (allow-eval safety surfaces in `EvalOptions::deny() / ::allow_eval()`); D-017 (timeout, hidden behind `EvalOptions::with_snippet_timeout`).
 
 ---
 
@@ -392,3 +392,35 @@ The cache directory sits at the workspace level (alongside the `.typ` source), g
 **Consequences:** T-B01's "Done when" expands to include a working scanner + the 10 required golden cases. `pulldown-cmark` and friends remain documented escalation paths if the scanner proves insufficient on real chapters. New `options` keys (`skip-eval`, `expected-error`, `expected-panic`, `auto-call`, `auto-call-await`) get added to `docs/design/package-api.md` § 5.1 when T-B01 ships; CLI must honor them in T-I03 onward.
 
 **Reference:** `docs/design/rbe-porter.md`; `docs/tracks/rust-by-example-port.md`; D-022 (track-level decision); D-019 (additive `options` policy).
+
+---
+
+## D-025 — Pending evcxr improvements live on a personal fork; switch to upstream when merged
+
+**Status:** accepted · 2026-05-07
+
+**Decision:** Patches and improvements to evcxr that arose from `evcxr-typst` work (or were drive-by while exploring it) are staged on the user's personal fork at <https://github.com/CGMossa/evcxr>, one feature branch + fork-PR per concern. They are **not** open against `evcxr/evcxr` upstream right now. When `evcxr-typst` development needs a not-yet-upstream change, depend on the appropriate fork branch (per D-006: still a path or git dep during dev, switch to crates.io once upstream releases include the change).
+
+Open fork PRs (CGMossa/evcxr#1..#9), each on a dedicated branch:
+
+| Fork PR | Upstream issue | What it adds |
+|---|---|---|
+| #1 | evcxr/evcxr#232 | preserve MIME-type parameters (`text/markdown; charset=utf-8`) — relevant to our display-output passthrough |
+| #2 | evcxr/evcxr#393 | `--config <PATH>` flag on the REPL for a custom init file |
+| #3 | evcxr/evcxr#376 | `:features` command — enable cargo features on the generated crate |
+| #4 | evcxr/evcxr#280, #281 | Jupyter `kernel_info_reply` / `execute_reply` spec fixes (out-of-scope for us, but it's there) |
+| #5 | evcxr/evcxr#370 | `:patch` command — `[patch.crates-io]` entries in the generated `Cargo.toml`. Useful for `evcxr-typst` users patching deps |
+| #6 | evcxr/evcxr#374 | tab completion for `:doc <prefix>` (REPL-only) |
+| #7 | evcxr/evcxr#188 | `--script <FILE>` + `--exit-after-script` flags on the REPL |
+| #8 | evcxr/evcxr#238 | surface compiler warnings in REPL output. Relevant: `evcxr-typst` may want to render rustc warnings in fallback-eval output too — once this lands, `EvalOutputs.warnings` becomes a public Vec |
+| #9 | evcxr/evcxr#428 | persist a tombstone for moved variables so bare reassignment in a later snippet rewrites to `let mut`. Affects D-011's "panics reset child" semantics tangentially — only the move-then-reassign case |
+
+**Rationale:** The user has READ-only permission on `evcxr/evcxr`. A burst of eight fork-targeted-but-mistakenly-upstream PRs landed on the upstream queue and were closed; those branches were re-pushed to fork-PRs against `CGMossa/evcxr` `main` so we can iterate without bothering the maintainer. The fork-PR gate also lets us validate each change against `evcxr-typst`'s actual usage before proposing upstream.
+
+**Consequences:**
+- D-006's "path during dev" expands to "path against `../evcxr/` (which may be on a fork branch checkout) during dev". A library consumer of `evcxr-typst` does **not** see fork branches because we publish via crates.io once a baseline is picked.
+- Two of these PRs are likely load-bearing for `evcxr-typst` features once the relevant tasks start: #8 (warnings) for fallback-eval pretty rendering (T-I07), and #5 (patch) as a user-facing convenience users may expect when they hit a transitive-dep bug (relevant to `dep()` ergonomics, T-D01/T-D03 already shipped — this is a follow-up consideration).
+- When a fork PR upstreams, this entry should be amended (or superseded) to drop that row from the table. When all rows clear, supersede with "all merged upstream" and remove the table.
+- We do **not** vendor or fork evcxr in this repo (D-002 still holds). The fork is a staging ground, not a substitute upstream.
+
+**Reference:** D-002 (separate repo, evcxr is a dependency); D-006 (path during dev, crates.io for release); evcxr's CLAUDE.md "read-only reference workspace" framing; conversation-derived memory at `~/.claude/projects/-Users-elea-Documents-GitHub-evcxr/memory/feedback_iterate_on_fork_first.md`.

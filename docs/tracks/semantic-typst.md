@@ -12,7 +12,7 @@ A Typst writer puts a Rust snippet in their document. Then, in prose:
 
 …and the rendered document shows the actual type (`Vec<f64>`), the actual signature (`fn normalize(xs: &mut [f64]) -> ()`), with the references hyperlinked back to their defining snippets. No copy-paste, no manual maintenance, no drift between code and prose. Edit the Rust, the prose updates with it.
 
-This is the pitch: documents that are *automatically* semantically self-aware, beyond what `rust-out` or `rust-display` can do by capturing stdout/images. The information was already in evcxr's own embedded rust-analyzer (`/Users/elea/Documents/GitHub/evcxr/evcxr/src/rust_analyzer.rs`); we just expose it.
+This is the pitch: documents that are *automatically* semantically self-aware, beyond what `rust-out` or `rust-display` can do by capturing stdout/images. The information was already in evcxr's own embedded rust-analyzer (`.evcxr/evcxr/src/rust_analyzer.rs`); we just expose it.
 
 ## Target UX — feature catalogue
 
@@ -167,6 +167,6 @@ Schema is governed by D-019 (major-breaking-only bumps; this counts as a fifth `
 ## References
 
 - `docs/design/wasm-plugin-analyzer.md` — companion analysis for S4 specifically (the WASM-plugin path).
-- `/Users/elea/Documents/GitHub/evcxr/evcxr/src/rust_analyzer.rs` — evcxr's existing RustAnalyzer integration. The data we want is largely already collected here for evcxr's own purposes.
-- `/Users/elea/Documents/GitHub/evcxr/evcxr/src/command_context.rs` — `CommandContext::completions` is the closest existing surface to what we want; not exactly the right shape but a useful precedent.
+- `.evcxr/evcxr/src/rust_analyzer.rs` — evcxr's existing RustAnalyzer integration. The data we want is largely already collected here for evcxr's own purposes.
+- `.evcxr/evcxr/src/command_context.rs` — `CommandContext::completions` is the closest existing surface to what we want; not exactly the right shape but a useful precedent.
 - `docs/DECISIONS.md` D-001 (prequery), D-004 (fallback), D-010 (cache layout), D-019 (schema versioning) — all unchanged by this track.

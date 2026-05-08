@@ -6,7 +6,7 @@ Integration glue between [evcxr](https://github.com/evcxr/evcxr) (a Rust evaluat
 
 ## Status
 
-Phase 0 design is complete (architecture, decisions, snippet semantics, error model, cache, watch-loop, multi-file projects, schema versioning — see [`docs/design/`](docs/design/)). Phase 1 scaffolding has shipped: a Rust CLI skeleton (`crates/evcxr-typst/`), a Typst package skeleton (`packages/evcxr/`), and a hello-world example. The next actionable task is **T-I03** — wiring the end-to-end smoke test that connects the CLI to the package via sidecar files. See [`docs/BACKLOG.md`](docs/BACKLOG.md).
+Phase 0 design is complete (architecture, decisions, snippet semantics, error model, cache, watch-loop, multi-file projects, schema versioning — see [`docs/design/`](docs/design/)). Phase 1 scaffolding has shipped: a Rust CLI skeleton (`crates/evcxr-typst/`), a Typst package skeleton (`packages/evcxr/`), and a hello-world example. The next actionable task is **T-L01** — splitting the CLI scaffold into a public `lib.rs` + thin `main.rs` per [D-023](docs/DECISIONS.md#d-023). T-I03 (end-to-end smoke test) follows once the library surface exists. See [`docs/BACKLOG.md`](docs/BACKLOG.md).
 
 ## Quick start
 

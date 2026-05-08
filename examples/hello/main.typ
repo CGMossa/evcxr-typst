@@ -4,16 +4,32 @@
 
 = Hello, evcxr-typst
 
-This document evaluates a Rust snippet via evcxr and embeds the captured stdout
-inline. Without `evcxr-typst run --allow-eval`, you'll see a placeholder box
-where the output would appear.
+This document evaluates three Rust snippets via evcxr and embeds their captured
+stdout inline. Without `evcxr-typst run --allow-eval`, you'll see placeholder
+boxes where the outputs would appear.
 
-#evcxr.rust(```rust
-println!("Hello from Rust, in a Typst document!");
+== Snippet 1 — establish a binding
+
+#evcxr.rust(id: "hello-1", ```rust
 let answer = 6 * 7;
 println!("answer = {answer}");
 ```)
 
-The snippet defines no items and persists no bindings, so it would still work
-correctly under the panic-resets-state caveat (D-011) — there's nothing
-downstream to be affected.
+== Snippet 2 — reuse the binding from snippet 1
+
+evcxr keeps `answer` alive across snippets, so this one prints something
+derived from it without re-declaring the value.
+
+#evcxr.rust(id: "hello-2", ```rust
+println!("twice the answer = {}", answer * 2);
+```)
+
+== Snippet 3 — define an item, call it
+
+This snippet defines a function and invokes it. Items committed by earlier
+snippets remain in scope for later ones (D-001 / snippet-semantics § "Items").
+
+#evcxr.rust(id: "hello-3", ```rust
+fn shout(s: &str) -> String { s.to_uppercase() + "!" }
+println!("{}", shout("hello, world"));
+```)
