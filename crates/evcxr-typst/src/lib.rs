@@ -75,6 +75,43 @@ pub enum Error {
     Evcxr(String),
 }
 
+/// Kind-specific options carried by a [`Snippet`].
+///
+/// Parsed from the `options` bag in the `<evcxr-snippet>` / `<evcxr-dep>`
+/// metadata payload. The variants mirror the subset of kwargs that affect
+/// evaluation or sidecar selection — display-only kwargs (e.g. `caption`,
+/// `render`) are irrelevant to the CLI and are not stored here.
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub enum SnippetOptions {
+    /// No kind-specific options (most snippet kinds).
+    #[default]
+    None,
+    /// Options for `dep(...)` snippets.
+    Dep {
+        /// Crate specifier: plain name (`"serde"`) or TOML fragment
+        /// (`"serde = { version = \"1\", features = [\"derive\"] }"`) when the
+        /// field contains `=`.
+        spec: String,
+        /// Version requirement, e.g. `"1"` or `"^1.2"`. `None` → latest.
+        version: Option<String>,
+        /// Feature flags to enable.
+        features: Vec<String>,
+    },
+    /// Options for `rust-display(...)` snippets.
+    Display {
+        /// Preferred output MIME type (`"image/png"`, `"image/svg+xml"`, …).
+        /// `None` → default priority order.
+        prefer: Option<String>,
+    },
+    /// Options for `rust-data(...)` snippets.
+    Data {
+        /// Desired deserialization format: `"json"` | `"cbor"` | `"auto"`.
+        /// `None` / `"auto"` → sniff from available sidecars.
+        format: Option<String>,
+    },
+}
+
 /// A discovered Rust snippet within a Typst project.
 ///
 /// Identity, ordering, and source text. The actual evaluation outcome lives
@@ -92,7 +129,11 @@ pub struct Snippet {
     /// the entry file and its imports).
     pub doc_order: usize,
     /// Verbatim Rust source captured from the metadata `src` field.
+    /// For `Dep` snippets this is always empty (`""`); the eval loop builds
+    /// the `:dep` directive from [`Snippet::options`] instead.
     pub src: String,
+    /// Kind-specific options parsed from the metadata payload.
+    pub options: SnippetOptions,
 }
 
 /// The kind of snippet, mirroring the seven public package functions in
@@ -152,6 +193,9 @@ pub struct SnippetResult {
     pub stderr: String,
     /// Wall-clock time spent in this snippet (zero on cache hit).
     pub elapsed: Duration,
+    /// Paths of every sidecar file written for this snippet (T-I04 MIME
+    /// passthrough). Empty when no sidecars were written.
+    pub mime_sidecars: Vec<PathBuf>,
 }
 
 /// A `[dependencies]` entry that successfully resolved during evaluation.
@@ -293,7 +337,9 @@ pub trait EvalCallbacks: Send {
     fn on_snippet_start(&mut self, _snippet: &Snippet) {}
     /// Called after a snippet finishes, with the resolved outcome.
     fn on_snippet_finish(&mut self, _snippet: &Snippet, _outcome: &SnippetOutcome) {}
-    /// Called once per sidecar written for the snippet.
+    /// Called once per sidecar file written for the snippet. Fires once per
+    /// file (e.g. once for `.png`, separately for `.txt`, separately for
+    /// `.manifest.json`), not once per snippet.
     fn on_sidecar_written(&mut self, _snippet: &Snippet, _path: &Path) {}
     /// Called when `:dep` resolution begins for a crate.
     fn on_dep_resolution_start(&mut self, _crate_name: &str) {}

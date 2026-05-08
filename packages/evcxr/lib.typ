@@ -9,8 +9,12 @@
 //   D-021  rename show: → render: (Typst reserves `show`)
 // Spec lives at docs/design/package-api.md (in the source repo, not shipped).
 //
-// Status: scaffolding. Functions emit metadata markers and render fallback
-// placeholders. Real sidecar consumption ships in T-I02 / T-I03.
+// T-I04: MIME passthrough wired. rust-display reads the per-snippet manifest
+// to know which extensions exist, then serves image() or raw() accordingly.
+// rust-data reads .cbor or .json sidecars. rust-html renders HTML verbatim.
+// The manifest (written for every successfully evaluated snippet) is the gate:
+// lib.typ only calls read() on paths confirmed by the manifest, so missing
+// files never trigger a hard Typst error (D-004 invariant preserved).
 
 #import "fallback.typ"
 
@@ -18,14 +22,23 @@
 
 #let _src-text(src) = if type(src) == str { src } else { src.text }
 
-#let _emit-snippet(kind, src, id, deps, options) = [#metadata((
-  v: _v,
-  kind: kind,
-  id: id,
-  src: _src-text(src),
-  deps: deps,
-  options: options,
-))<evcxr-snippet>]
+// Global document-order counter shared across all evcxr items (snippets and
+// deps). Incremented once per call so the CLI can interleave the two separate
+// `typst query` results correctly, even without file-position info.
+#let _order = counter("evcxr-doc-order")
+
+#let _emit-snippet(kind, src, id, deps, options) = {
+  _order.step()
+  context [#metadata((
+    v: _v,
+    kind: kind,
+    id: id,
+    src: _src-text(src),
+    deps: deps,
+    options: options,
+    loc: (doc_order: _order.get().first()),
+  ))<evcxr-snippet>]
+}
 
 // Phase 1 (T-I03): the CLI invokes
 //   typst compile --input evcxr-mode=read --input evcxr-cache=<abs-path> ...
@@ -37,12 +50,91 @@
 #let _evcxr-mode = sys.inputs.at("evcxr-mode", default: "fallback")
 #let _evcxr-cache = sys.inputs.at("evcxr-cache", default: "")
 
+// Whether sidecar reading is active.
+#let _read-mode = _evcxr-mode == "read" and _evcxr-cache != ""
+
 #let _read-stdout(kind, id) = {
-  if id == none or _evcxr-mode != "read" or _evcxr-cache == "" {
+  if not _read-mode or id == none {
     fallback.placeholder(kind, id)
   } else {
     let bytes = read(_evcxr-cache + "/" + str(id) + ".txt")
     raw(str(bytes), block: true)
+  }
+}
+
+// Read the per-snippet manifest JSON.
+// Returns the extensions array (e.g. ("png", "txt")) or () when absent.
+// The manifest is written for every successfully evaluated snippet (T-I04),
+// so in read-mode it is always present for snippets that ran ok.
+#let _manifest-exts(id) = {
+  if not _read-mode or id == none { return () }
+  let path = _evcxr-cache + "/" + str(id) + ".manifest.json"
+  json(path).at("extensions", default: ())
+}
+
+#let _read-display(id, prefer: none) = {
+  if not _read-mode or id == none {
+    return fallback.placeholder("rust-display", id)
+  }
+  let exts = _manifest-exts(id)
+
+  // Priority order, honouring prefer:.
+  let order = if prefer == "image/png" or prefer == "png" {
+    ("png", "svg", "jpg", "html")
+  } else if prefer == "image/svg+xml" or prefer == "svg" {
+    ("svg", "png", "jpg", "html")
+  } else if prefer == "image/jpeg" or prefer == "jpeg" or prefer == "jpg" {
+    ("jpg", "png", "svg", "html")
+  } else if prefer == "text/html" or prefer == "html" {
+    ("html", "png", "svg", "jpg")
+  } else {
+    // Default: raster images first, then vector, then html
+    ("png", "svg", "jpg", "html")
+  }
+
+  let result = none
+  for ext in order {
+    if exts.contains(ext) and result == none {
+      let path = _evcxr-cache + "/" + str(id) + "." + ext
+      result = if ext == "html" {
+        raw(str(read(path)), lang: "html")
+      } else {
+        image(path)
+      }
+    }
+  }
+  if result == none {
+    fallback.placeholder("rust-display", id)
+  } else {
+    result
+  }
+}
+
+#let _read-html(id) = {
+  if not _read-mode or id == none {
+    return fallback.placeholder("rust-html", id)
+  }
+  let exts = _manifest-exts(id)
+  if not exts.contains("html") {
+    return fallback.placeholder("rust-html", id)
+  }
+  raw(str(read(_evcxr-cache + "/" + str(id) + ".html")), lang: "html")
+}
+
+#let _read-data(id, format: auto) = {
+  if not _read-mode or id == none { return none }
+  let exts = _manifest-exts(id)
+
+  // Priority: explicit format → auto-detect (cbor first, then json).
+  let want-cbor = format == "cbor" or (format == auto and exts.contains("cbor"))
+  let want-json = format == "json" or (format == auto and exts.contains("json"))
+
+  if want-cbor and exts.contains("cbor") {
+    cbor(_evcxr-cache + "/" + str(id) + ".cbor")
+  } else if want-json and exts.contains("json") {
+    json(_evcxr-cache + "/" + str(id) + ".json")
+  } else {
+    none
   }
 }
 
@@ -80,7 +172,16 @@
   _emit-snippet("rust-display", src, id, deps, (
     prefer: prefer, timeout: timeout,
   ))
-  fallback.placeholder("rust-display", id)
+  _read-display(id, prefer: prefer)
+}
+
+// rust-html renders the snippet's HTML output verbatim as a raw block.
+// HTML frame rendering (typst html.frame) is intentionally deferred per T-I04.
+#let rust-html(src, id: none, deps: (), timeout: auto) = {
+  _emit-snippet("rust-display", src, id, deps, (
+    prefer: "text/html", timeout: timeout,
+  ))
+  _read-html(id)
 }
 
 #let rust-hidden(src, id: none, deps: (), timeout: auto) = {
@@ -88,20 +189,40 @@
   // renders nothing on purpose
 }
 
+// rust-data emits the snippet metadata marker and renders nothing visible.
+// The snippet is evaluated by the CLI and its CBOR/JSON output is written to a
+// sidecar. To consume the parsed value in Typst, call rust-data-read(id).
+//
+// Two-call pattern (required by Typst's type system — a function cannot both
+// place metadata content in the document AND return a non-content dict value):
+//   #evcxr.rust-data(id: "x", ```rust...```)        // emits marker, no visual
+//   #let v = evcxr.rust-data-read(id: "x")          // returns dict / array
 #let rust-data(
-  src, id: none, deps: (), format: auto, fallback: (:), timeout: auto,
+  src, id: none, deps: (), format: auto, timeout: auto,
 ) = {
   _emit-snippet("rust-data", src, id, deps, (
     format: format, timeout: timeout,
   ))
-  fallback
+  // renders nothing on purpose (data is consumed via rust-data-read)
 }
 
-#let dep(spec, version: none, features: (), id: none) = [#metadata((
-  v: _v,
-  kind: "dep",
-  id: id,
-  spec: spec,
-  version: version,
-  features: features,
-))<evcxr-dep>]
+// Read the evaluated sidecar for a rust-data snippet and return the parsed
+// Typst value (dict or array). Returns `fallback` when in fallback mode or
+// when no sidecar exists.
+#let rust-data-read(id: none, format: auto, fallback: (:)) = {
+  let result = _read-data(id, format: format)
+  if result == none { fallback } else { result }
+}
+
+#let dep(spec, version: none, features: (), id: none) = {
+  _order.step()
+  context [#metadata((
+    v: _v,
+    kind: "dep",
+    id: id,
+    spec: spec,
+    version: version,
+    features: features,
+    loc: (doc_order: _order.get().first()),
+  ))<evcxr-dep>]
+}
