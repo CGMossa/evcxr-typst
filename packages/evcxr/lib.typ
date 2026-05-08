@@ -17,6 +17,7 @@
 // files never trigger a hard Typst error (D-004 invariant preserved).
 
 #import "fallback.typ"
+#import "error.typ"
 
 #let _v = 1
 
@@ -53,15 +54,6 @@
 // Whether sidecar reading is active.
 #let _read-mode = _evcxr-mode == "read" and _evcxr-cache != ""
 
-#let _read-stdout(kind, id) = {
-  if not _read-mode or id == none {
-    fallback.placeholder(kind, id)
-  } else {
-    let bytes = read(_evcxr-cache + "/" + str(id) + ".txt")
-    raw(str(bytes), block: true)
-  }
-}
-
 // Read the per-snippet manifest JSON.
 // Returns the extensions array (e.g. ("png", "txt")) or () when absent.
 // The manifest is written for every successfully evaluated snippet (T-I04),
@@ -72,10 +64,31 @@
   json(path).at("extensions", default: ())
 }
 
+// Returns the parsed error JSON dict when the snippet has an error sidecar,
+// or none when it ran successfully.
+#let _check-error(id) = {
+  if not _read-mode or id == none { return none }
+  let exts = _manifest-exts(id)
+  if not exts.contains("error") { return none }
+  json(_evcxr-cache + "/" + str(id) + ".error.json")
+}
+
+#let _read-stdout(kind, id) = {
+  if not _read-mode or id == none {
+    return fallback.placeholder(kind, id)
+  }
+  let err = _check-error(id)
+  if err != none { return error.evcxr-error-box(err) }
+  let bytes = read(_evcxr-cache + "/" + str(id) + ".txt")
+  raw(str(bytes), block: true)
+}
+
 #let _read-display(id, prefer: none) = {
   if not _read-mode or id == none {
     return fallback.placeholder("rust-display", id)
   }
+  let err = _check-error(id)
+  if err != none { return error.evcxr-error-box(err) }
   let exts = _manifest-exts(id)
 
   // Priority order, honouring prefer:.
@@ -114,6 +127,8 @@
   if not _read-mode or id == none {
     return fallback.placeholder("rust-html", id)
   }
+  let err = _check-error(id)
+  if err != none { return error.evcxr-error-box(err) }
   let exts = _manifest-exts(id)
   if not exts.contains("html") {
     return fallback.placeholder("rust-html", id)
@@ -123,6 +138,8 @@
 
 #let _read-data(id, format: auto) = {
   if not _read-mode or id == none { return none }
+  let err = _check-error(id)
+  if err != none { return none }
   let exts = _manifest-exts(id)
 
   // Priority: explicit format → auto-detect (cbor first, then json).
@@ -203,7 +220,9 @@
   _emit-snippet("rust-data", src, id, deps, (
     format: format, timeout: timeout,
   ))
-  // renders nothing on purpose (data is consumed via rust-data-read)
+  // Error box here because rust-data-read returns a value, not content (D-015).
+  let err = _check-error(id)
+  if err != none { error.evcxr-error-box(err) }
 }
 
 // Read the evaluated sidecar for a rust-data snippet and return the parsed

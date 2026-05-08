@@ -10,7 +10,7 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 
-use evcxr_typst::{EvalOptions, Project, ProjectConfig, WatchOptions};
+use evcxr_typst::{EvalOptions, Project, ProjectConfig, SnippetOutcome, WatchOptions};
 
 #[derive(Parser)]
 #[command(
@@ -72,16 +72,32 @@ pub fn run() -> Result<()> {
                 EvalOptions::deny()
             };
             let report = project.evaluate(&opts)?;
+            let error_count = report
+                .snippets
+                .iter()
+                .filter(|s| {
+                    !matches!(
+                        s.outcome,
+                        SnippetOutcome::Ok
+                            | SnippetOutcome::SkippedNoEval
+                            | SnippetOutcome::CacheHit
+                    )
+                })
+                .count();
             eprintln!(
-                "{} snippets evaluated in {:?}",
+                "{} snippets evaluated in {:?}; {} errors",
                 report.snippets.len(),
-                report.elapsed
+                report.elapsed,
+                error_count
             );
             let cache_typst_path = project.cache_dir_typst_path()?;
             let pdf = output_path(&path, "pdf");
             let svg = output_path(&path, "svg");
             typst_compile(project.root(), &path, &cache_typst_path, "pdf", &pdf)?;
             typst_compile(project.root(), &path, &cache_typst_path, "svg", &svg)?;
+            if error_count > 0 {
+                bail!("{error_count} snippet(s) failed (see error sidecars and SVG for details)");
+            }
             Ok(())
         }
         Cmd::Watch {

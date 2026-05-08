@@ -45,6 +45,7 @@ use std::time::{Duration, Instant};
 
 mod cache;
 mod discovery;
+mod error_capture;
 mod eval;
 mod identity;
 mod watch;
@@ -136,6 +137,9 @@ pub struct Snippet {
     pub src: String,
     /// Kind-specific options parsed from the metadata payload.
     pub options: SnippetOptions,
+    /// Per-snippet timeout override from the `timeout:` kwarg (D-017).
+    /// `None` → use the global `EvalOptions::snippet_timeout` (default 30 s).
+    pub timeout_ms: Option<u64>,
 }
 
 /// The kind of snippet, mirroring the seven public package functions in
@@ -471,7 +475,7 @@ impl Project {
         let cache_dir = self.cache_dir();
 
         let (snippet_results, hits, misses) = if options.allow_eval {
-            let outcome = eval::run(&self.snippets, &cache_dir, None)?;
+            let outcome = eval::run(&self.snippets, &cache_dir, None, options.snippet_timeout)?;
             let h = outcome.cache_hits;
             let m = outcome.cache_misses;
             (outcome.results, h, m)

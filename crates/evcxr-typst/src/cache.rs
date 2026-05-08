@@ -470,6 +470,7 @@ mod tests {
             doc_order,
             src: src.to_owned(),
             options: SnippetOptions::None,
+            timeout_ms: None,
         }
     }
 
