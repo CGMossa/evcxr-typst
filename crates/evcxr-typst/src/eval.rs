@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 use evcxr::CommandContext;
 use serde_json::json;
 
+use crate::cache::{self, CacheEnv};
 use crate::{
     Error, EvalCallbacks, Snippet, SnippetKind, SnippetOptions, SnippetOutcome, SnippetResult,
 };
@@ -29,6 +30,8 @@ pub(crate) const CACHE_DIRNAME: &str = ".evcxr-typst-cache";
 
 pub(crate) struct EvalOutcome {
     pub results: Vec<SnippetResult>,
+    pub cache_hits: usize,
+    pub cache_misses: usize,
 }
 
 pub(crate) fn run(
@@ -38,11 +41,20 @@ pub(crate) fn run(
 ) -> Result<EvalOutcome, Error> {
     tracing::debug!(snippets = snippets.len(), "eval::run start");
     fs::create_dir_all(cache_dir)?;
+    cache::ensure_readme(cache_dir)?;
     tracing::debug!(path = %cache_dir.display(), "cache dir ready");
+
+    let env = CacheEnv::collect(&[]);
+    let mut prior_chain = cache::initial_chain();
+    let mut active_deps: Vec<&Snippet> = Vec::new();
+    // Load the existing index for cache hit detection.
+    let mut index = cache::read_index(cache_dir);
 
     let (mut context, outputs) =
         CommandContext::new().map_err(|e| Error::Evcxr(format!("CommandContext::new: {e}")))?;
     tracing::debug!("CommandContext spawned");
+    // Enable evcxr's rustc artifact cache (see cache.md § "Interaction with evcxr's :cache").
+    let _ = context.execute(":cache 500");
 
     // evcxr's `EvalContext::try_run_statements` busy-waits for its internal
     // `stdout_sender` to drain before returning from `execute()`; if the
@@ -75,6 +87,8 @@ pub(crate) fn run(
 
     let mut results = Vec::with_capacity(snippets.len());
     let mut cb_holder = callbacks;
+    let mut cache_hits = 0usize;
+    let mut cache_misses = 0usize;
 
     for snippet in snippets {
         tracing::debug!(id = %snippet.id, kind = ?snippet.kind, "snippet start");
@@ -95,6 +109,11 @@ pub(crate) fn run(
             drain_pending(&stdout_rx);
             drain_pending(&stderr_rx);
 
+            // Track as active dep after successful resolution.
+            if exec_result.is_ok() {
+                active_deps.push(snippet);
+            }
+
             let outcome = match exec_result {
                 Ok(_) => SnippetOutcome::Ok,
                 Err(e) => {
@@ -114,6 +133,9 @@ pub(crate) fn run(
                 cb.on_snippet_finish(snippet, &outcome);
             }
             results.push(result);
+            // Advance chain with dep snippet (empty src — dep doesn't affect
+            // code state but still advances the chain monotonically).
+            prior_chain = cache::advance_chain(&prior_chain, &snippet.src);
             continue;
         }
 
@@ -130,6 +152,34 @@ pub(crate) fn run(
                 cb.on_snippet_finish(snippet, &result.outcome);
             }
             results.push(result);
+            continue;
+        }
+
+        // Compute cache key and check for a hit.
+        let cache_key = cache::compute_key(snippet, &prior_chain, &active_deps, &env);
+        let cached_key_matches = index
+            .get(&snippet.id)
+            .map(|k| k == &cache_key)
+            .unwrap_or(false);
+
+        if cached_key_matches
+            && let Ok(cache::LookupResult::Hit) = cache::lookup(cache_dir, &cache_key, &snippet.id)
+        {
+            tracing::debug!(id = %snippet.id, "cache hit");
+            cache_hits += 1;
+            let result = SnippetResult {
+                id: snippet.id.clone(),
+                outcome: SnippetOutcome::CacheHit,
+                stdout: String::new(),
+                stderr: String::new(),
+                elapsed: Duration::ZERO,
+                mime_sidecars: Vec::new(),
+            };
+            if let Some(cb) = cb_holder.as_deref_mut() {
+                cb.on_snippet_finish(snippet, &result.outcome);
+            }
+            results.push(result);
+            prior_chain = cache::advance_chain(&prior_chain, &snippet.src);
             continue;
         }
 
@@ -189,6 +239,12 @@ pub(crate) fn run(
                 }
             }
             mime_sidecars = written;
+            // Store the evaluated output in the CAS.
+            let _ = cache::store(cache_dir, &cache_key, &snippet.id);
+            index.insert(snippet.id.clone(), cache_key.clone());
+            cache_misses += 1;
+        } else {
+            cache_misses += 1;
         }
 
         let result = SnippetResult {
@@ -203,13 +259,21 @@ pub(crate) fn run(
             cb.on_snippet_finish(snippet, &outcome);
         }
         results.push(result);
+        prior_chain = cache::advance_chain(&prior_chain, &snippet.src);
     }
 
     drop(context);
     let _ = stdout_drain.join();
     let _ = stderr_drain.join();
 
-    Ok(EvalOutcome { results })
+    // Write the updated index atomically.
+    let _ = cache::write_index(cache_dir, &index);
+
+    Ok(EvalOutcome {
+        results,
+        cache_hits,
+        cache_misses,
+    })
 }
 
 /// Write all sidecars for a single successful snippet. Returns paths of every
@@ -219,7 +283,7 @@ pub(crate) fn run(
 /// forwarded stdout for the `.txt` sidecar. If both are present, the MIME
 /// payload is written and the forwarded stdout is discarded (explicit wins).
 /// If only `plain_stdout` is non-empty, it is written as the `.txt` sidecar.
-fn write_mime_sidecars(
+pub(crate) fn write_mime_sidecars(
     cache_dir: &Path,
     id: &str,
     content_by_mime_type: &HashMap<String, String>,
@@ -330,7 +394,7 @@ fn is_unknown_mime(mime: &str) -> bool {
 /// where `<config>` is a TOML value (e.g. `"1"` or `{ version = "1",
 /// features = ["derive"] }`). A name containing `=` is passed through
 /// verbatim as a TOML fragment.
-fn format_dep_directive(snippet: &Snippet) -> String {
+pub(crate) fn format_dep_directive(snippet: &Snippet) -> String {
     let SnippetOptions::Dep {
         spec,
         version,
@@ -380,6 +444,83 @@ fn collect_pending(rx: &Receiver<String>) -> String {
     out
 }
 
+/// Like `skip_all` but checks the cache first; returns `CacheHit` for snippets
+/// whose output is already in the CAS. Used on the deny-eval path so cached
+/// results are still served without running evcxr.
+pub(crate) fn skip_all_with_cache(
+    snippets: &[Snippet],
+    cache_dir: &Path,
+) -> Result<EvalOutcome, Error> {
+    if !cache_dir.exists() {
+        return Ok(EvalOutcome {
+            results: skip_all(snippets),
+            cache_hits: 0,
+            cache_misses: snippets.len(),
+        });
+    }
+    let env = CacheEnv::collect(&[]);
+    let mut prior_chain = cache::initial_chain();
+    let mut active_deps: Vec<&Snippet> = Vec::new();
+    let index = cache::read_index(cache_dir);
+    let mut results = Vec::with_capacity(snippets.len());
+    let mut cache_hits = 0usize;
+    let mut cache_misses = 0usize;
+
+    for snippet in snippets {
+        if snippet.kind == SnippetKind::Dep {
+            active_deps.push(snippet);
+            results.push(SnippetResult {
+                id: snippet.id.clone(),
+                outcome: SnippetOutcome::SkippedNoEval,
+                stdout: String::new(),
+                stderr: String::new(),
+                elapsed: Duration::ZERO,
+                mime_sidecars: Vec::new(),
+            });
+            prior_chain = cache::advance_chain(&prior_chain, &snippet.src);
+            continue;
+        }
+        if !is_evaluable(snippet.kind) {
+            results.push(SnippetResult {
+                id: snippet.id.clone(),
+                outcome: SnippetOutcome::Ok,
+                stdout: String::new(),
+                stderr: String::new(),
+                elapsed: Duration::ZERO,
+                mime_sidecars: Vec::new(),
+            });
+            continue;
+        }
+        let key = cache::compute_key(snippet, &prior_chain, &active_deps, &env);
+        let cached_key_matches = index.get(&snippet.id).map(|k| k == &key).unwrap_or(false);
+        let outcome = if cached_key_matches
+            && matches!(
+                cache::lookup(cache_dir, &key, &snippet.id),
+                Ok(cache::LookupResult::Hit)
+            ) {
+            cache_hits += 1;
+            SnippetOutcome::CacheHit
+        } else {
+            cache_misses += 1;
+            SnippetOutcome::SkippedNoEval
+        };
+        results.push(SnippetResult {
+            id: snippet.id.clone(),
+            outcome,
+            stdout: String::new(),
+            stderr: String::new(),
+            elapsed: Duration::ZERO,
+            mime_sidecars: Vec::new(),
+        });
+        prior_chain = cache::advance_chain(&prior_chain, &snippet.src);
+    }
+    Ok(EvalOutcome {
+        results,
+        cache_hits,
+        cache_misses,
+    })
+}
+
 pub(crate) fn skip_all(snippets: &[Snippet]) -> Vec<SnippetResult> {
     snippets
         .iter()
@@ -398,7 +539,7 @@ pub(crate) fn skip_all(snippets: &[Snippet]) -> Vec<SnippetResult> {
         .collect()
 }
 
-fn is_evaluable(kind: SnippetKind) -> bool {
+pub(crate) fn is_evaluable(kind: SnippetKind) -> bool {
     matches!(
         kind,
         SnippetKind::Rust
