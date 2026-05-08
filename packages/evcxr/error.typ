@@ -50,7 +50,7 @@
       // WHY: Typst has no character-width measurement API in pure Typst;
       // 0.6em is a reasonable approximation for typical monospace fonts.
       h((cs + 3) * 0.6em)
-      [#"^" * calc.max(1, ce - cs) ]
+      [#("^" * calc.max(1, ce - cs))]
       if label != "" [ *#label* ]
       linebreak()
     }
@@ -137,7 +137,7 @@
           let hint = first.at("evcxr_hint", default: none)
           if hint != none {
             linebreak()
-            [_note: #hint_]
+            emph[note: #hint]
           }
         },
       )

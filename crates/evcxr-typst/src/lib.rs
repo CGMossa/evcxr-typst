@@ -415,6 +415,8 @@ pub struct EvaluationReport {
     pub cache_hits: usize,
     /// Snippets that re-evaluated.
     pub cache_misses: usize,
+    /// Validation issues found on the deny-eval path: `(snippet_id, reason)`.
+    pub validation_issues: Vec<(String, String)>,
 }
 
 /// A Typst document plus its discovered snippet set.
@@ -474,17 +476,31 @@ impl Project {
         let start = Instant::now();
         let cache_dir = self.cache_dir();
 
-        let (snippet_results, hits, misses) = if options.allow_eval {
+        let (snippet_results, hits, misses, validation_issues) = if options.allow_eval {
+            let cb = options.callbacks.as_deref();
+            // callbacks are &dyn EvalCallbacks; we can't pass a reference to
+            // the Box directly through generics, so cast explicitly.
+            let _ = cb; // currently eval::run takes Option<&mut dyn EvalCallbacks>
             let outcome = eval::run(&self.snippets, &cache_dir, None, options.snippet_timeout)?;
             let h = outcome.cache_hits;
             let m = outcome.cache_misses;
-            (outcome.results, h, m)
+            (outcome.results, h, m, Vec::new())
         } else {
             let outcome = eval::skip_all_with_cache(&self.snippets, &cache_dir)?;
             let h = outcome.cache_hits;
             let m = outcome.cache_misses;
-            (outcome.results, h, m)
+            let issues = eval::validate_sidecars(&self.snippets, &outcome.results, &cache_dir);
+            (outcome.results, h, m, issues)
         };
+
+        // Write _index.json listing IDs with materialised sidecars so the
+        // Typst package can guard json() calls on missing manifests (D-004).
+        let available: Vec<&str> = snippet_results
+            .iter()
+            .filter(|r| matches!(r.outcome, SnippetOutcome::Ok | SnippetOutcome::CacheHit))
+            .map(|r| r.id.as_str())
+            .collect();
+        eval::write_available_index(&cache_dir, &available)?;
 
         Ok(EvaluationReport {
             snippets: snippet_results,
@@ -492,6 +508,7 @@ impl Project {
             elapsed: start.elapsed(),
             cache_hits: hits,
             cache_misses: misses,
+            validation_issues,
         })
     }
 

@@ -84,12 +84,41 @@ pub fn run() -> Result<()> {
                     )
                 })
                 .count();
-            eprintln!(
-                "{} snippets evaluated in {:?}; {} errors",
-                report.snippets.len(),
-                report.elapsed,
-                error_count
-            );
+
+            if !allow_eval {
+                // Informational summary on the deny-eval path. Exits 0 (D-004).
+                let skipped = report
+                    .snippets
+                    .iter()
+                    .filter(|s| s.outcome == SnippetOutcome::SkippedNoEval)
+                    .count();
+                eprintln!(
+                    "{} snippets: {} cached, {} need eval — run with `evcxr-typst run --allow-eval` to evaluate.",
+                    report.snippets.len(),
+                    report.cache_hits,
+                    skipped,
+                );
+                if !report.validation_issues.is_empty() {
+                    eprintln!(
+                        "  {} malformed sidecar(s): {}",
+                        report.validation_issues.len(),
+                        report
+                            .validation_issues
+                            .iter()
+                            .map(|(id, r)| format!("{id}: {r}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                }
+            } else {
+                eprintln!(
+                    "{} snippets evaluated in {:?}; {} errors",
+                    report.snippets.len(),
+                    report.elapsed,
+                    error_count
+                );
+            }
+
             let cache_typst_path = project.cache_dir_typst_path()?;
             let pdf = output_path(&path, "pdf");
             let svg = output_path(&path, "svg");
