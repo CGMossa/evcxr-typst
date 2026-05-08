@@ -134,30 +134,41 @@ fn make_data() -> Vec<Sample> { /* … */ }
 ```)
 ```
 
-### 2.5 `rust-data(src, ..)` — return parsed data, not content
+### 2.5 `rust-data` / `rust-data-read` — emit and read parsed data
+
+**Canonical (two-call) form** — see amendment in D-015 for why the single-call form is impossible.
 
 ```typc
+// Call 1: emit the metadata marker (returns nothing renderable).
 #let rust-data(
+  id,
   src,
-  id: none,
   deps: (),
-  format: auto,           // "json" | "cbor" | auto (sniff)
-  fallback: (:),          // value to return when no sidecar yet exists (pre-CLI run)
   timeout: auto,          // per-snippet override; see § 2.8
+) -> content
+
+// Call 2: read the sidecar and return the parsed dict/array.
+#let rust-data-read(
+  id:,
+  format: auto,           // "json" | "cbor" | auto (sniff)
+  fallback: (:),          // value when no sidecar yet exists (pre-CLI run)
 ) -> any
 ```
 
-The odd one out: it does **not** return content. It returns a Typst value (dict / array) parsed from the `application/json` or `application/cbor` sidecar. Snippets are expected to emit `evcxr_runtime::mime_type("application/json", ...)` or similar.
+Authors call them in pairs, sharing the same `id`:
 
 ```typ
-#let stats = rust-data(```rust
+#rust-data("stats", ```rust
   evcxr_json!({ "n": data.len(), "mean": mean(&data), "sd": sd(&data) })
 ```)
 
+#let stats = rust-data-read(id: "stats")
 The dataset has #stats.n samples, mean #stats.mean.
 ```
 
-Three return modes (resolved in D-015):
+The split is required because a Typst function body that emits `metadata(...)<evcxr-snippet>` content cannot also return a value — content evaluation absorbs the would-be return value. `rust-data` emits the marker (analogous to `rust-hidden`); `rust-data-read` reads the `.cbor`/`.json` sidecar written by the CLI and returns the dict. The CLI writes a `<id>.manifest.json` listing all extensions produced, which `rust-data-read` and the related `_read-display`/`_read-html` helpers gate on to avoid hard missing-file errors. See D-015 (amendment, T-I04) for full rationale.
+
+Three return modes for `rust-data-read` (resolved in D-015):
 
 - **Success** — the parsed dict/array.
 - **No sidecar yet** (CLI hasn't been run, or `--allow-eval` was off) — returns `fallback` (default `(:)`). Lets the document compile cleanly under bare `typst compile` per D-004 without forcing every call site to pattern-match an option type.
