@@ -44,6 +44,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 mod discovery;
+mod error_capture;
 mod eval;
 mod identity;
 
@@ -134,6 +135,9 @@ pub struct Snippet {
     pub src: String,
     /// Kind-specific options parsed from the metadata payload.
     pub options: SnippetOptions,
+    /// Per-snippet timeout override from the `timeout:` kwarg (D-017).
+    /// `None` → use the global `EvalOptions::snippet_timeout` (default 30 s).
+    pub timeout_ms: Option<u64>,
 }
 
 /// The kind of snippet, mirroring the seven public package functions in
@@ -467,7 +471,7 @@ impl Project {
         // through the eval loop — `EvalOptions::with_callbacks` is reserved
         // for the watch task. Hook them up alongside that work.
         let snippet_results = if options.allow_eval {
-            let outcome = eval::run(&self.snippets, &cache_dir, None)?;
+            let outcome = eval::run(&self.snippets, &cache_dir, None, options.snippet_timeout)?;
             outcome.results
         } else {
             eval::skip_all(&self.snippets)

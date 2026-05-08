@@ -8,6 +8,11 @@
 //! `<id>.manifest.json` listing every extension produced so that `lib.typ`
 //! can probe safely without `try`/`catch`.
 //!
+//! T-I07 scope: adds error classification (compile / panic / timeout / dep /
+//! internal) and writes `<id>.error.json` sidecars via `error_capture`.
+//! Adds a watchdog-thread timeout (default 30 s, D-009) around each
+//! `context.execute` call — sync, no tokio.
+//!
 //! `:dep` snippets are handled by emitting a `:dep` directive directly into
 //! `CommandContext::execute` before any snippet that follows in document order.
 
@@ -15,6 +20,10 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -23,22 +32,43 @@ use serde_json::json;
 
 use crate::{
     Error, EvalCallbacks, Snippet, SnippetKind, SnippetOptions, SnippetOutcome, SnippetResult,
+    error_capture::{self, OffsetMap},
 };
 
 pub(crate) const CACHE_DIRNAME: &str = ".evcxr-typst-cache";
+
+/// Default per-snippet timeout (D-009: 30 s). Can be overridden via
+/// `EvalOptions::with_snippet_timeout` and per-snippet `timeout:` kwarg (D-017).
+pub(crate) const DEFAULT_SNIPPET_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(crate) struct EvalOutcome {
     pub results: Vec<SnippetResult>,
 }
 
+/// Run the eval loop with an optional global timeout override.
+///
+/// `default_timeout`: `None` → use `DEFAULT_SNIPPET_TIMEOUT`;
+///   `Some(Duration::ZERO)` → no timeout.
 pub(crate) fn run(
     snippets: &[Snippet],
     cache_dir: &Path,
     callbacks: Option<&mut dyn EvalCallbacks>,
+    default_timeout: Option<Duration>,
 ) -> Result<EvalOutcome, Error> {
     tracing::debug!(snippets = snippets.len(), "eval::run start");
     fs::create_dir_all(cache_dir)?;
     tracing::debug!(path = %cache_dir.display(), "cache dir ready");
+
+    // Set RUST_BACKTRACE=1 so the child captures backtraces on panic.
+    // WHY: set_var is safe here because we are single-threaded before
+    // CommandContext::new() spawns any child. Side effects on unrelated
+    // subprocesses are acceptable in a Rust-eval tool.
+    // SAFETY: no other threads are active when this runs (called from
+    // the main eval path before any child threads start).
+    #[allow(unused_unsafe)]
+    unsafe {
+        std::env::set_var("RUST_BACKTRACE", "1");
+    }
 
     let (mut context, outputs) =
         CommandContext::new().map_err(|e| Error::Evcxr(format!("CommandContext::new: {e}")))?;
@@ -73,8 +103,14 @@ pub(crate) fn run(
         })
     };
 
+    let global_timeout = default_timeout.unwrap_or(DEFAULT_SNIPPET_TIMEOUT);
+
     let mut results = Vec::with_capacity(snippets.len());
     let mut cb_holder = callbacks;
+    let mut offset_map = OffsetMap::new();
+    // Track all item names known before any snippet runs, so we can diff.
+    let mut prev_item_names: Vec<String> =
+        context.defined_item_names().map(str::to_owned).collect();
 
     for snippet in snippets {
         tracing::debug!(id = %snippet.id, kind = ?snippet.kind, "snippet start");
@@ -85,6 +121,11 @@ pub(crate) fn run(
         // Handle dep snippets: emit a `:dep` directive and continue.
         if snippet.kind == SnippetKind::Dep {
             let directive = format_dep_directive(snippet);
+            let dep_spec = if let SnippetOptions::Dep { spec, .. } = &snippet.options {
+                spec.clone()
+            } else {
+                snippet.id.clone()
+            };
             tracing::debug!(id = %snippet.id, directive = %directive, "emitting :dep");
             drain_pending(&stdout_rx);
             drain_pending(&stderr_rx);
@@ -92,21 +133,28 @@ pub(crate) fn run(
             let exec_result = context.execute(&directive);
             let elapsed = start.elapsed();
             thread::sleep(Duration::from_millis(20));
-            drain_pending(&stdout_rx);
-            drain_pending(&stderr_rx);
+            let stdout = collect_pending(&stdout_rx);
+            let stderr = collect_pending(&stderr_rx);
 
             let outcome = match exec_result {
                 Ok(_) => SnippetOutcome::Ok,
                 Err(e) => {
                     tracing::warn!(id = %snippet.id, error = %e, ":dep resolution error");
+                    // Write a dep error sidecar.
+                    let sidecar =
+                        error_capture::classify_dep_error(&dep_spec, &stderr, &snippet.id);
+                    if let Err(io) = error_capture::write_error_sidecar(cache_dir, &sidecar, false)
+                    {
+                        tracing::warn!(id = %snippet.id, error = %io, "failed to write dep error sidecar");
+                    }
                     SnippetOutcome::DepResolutionError
                 }
             };
             let result = SnippetResult {
                 id: snippet.id.clone(),
                 outcome: outcome.clone(),
-                stdout: String::new(),
-                stderr: String::new(),
+                stdout,
+                stderr,
                 elapsed,
                 mime_sidecars: Vec::new(),
             };
@@ -140,9 +188,44 @@ pub(crate) fn run(
         drain_pending(&stdout_rx);
         drain_pending(&stderr_rx);
 
-        tracing::debug!(id = %snippet.id, "calling context.execute");
+        // Resolve the effective timeout for this snippet (D-017: per-snippet wins).
+        let effective_timeout = snippet.timeout_ms.map(Duration::from_millis).or_else(|| {
+            if global_timeout == Duration::ZERO {
+                None
+            } else {
+                Some(global_timeout)
+            }
+        });
+
+        tracing::debug!(id = %snippet.id, timeout_ms = ?effective_timeout.map(|d| d.as_millis()), "calling context.execute");
         let start = Instant::now();
+
+        // Watchdog-thread timeout: spawn a thread that kills the child after
+        // `effective_timeout` if the main thread hasn't already finished.
+        // No tokio: we stay sync at the library boundary (D-023).
+        let timed_out = Arc::new(AtomicBool::new(false));
+        let watchdog = if let Some(timeout_dur) = effective_timeout {
+            let flag = Arc::clone(&timed_out);
+            let handle = context.process_handle();
+            Some(thread::spawn(move || {
+                thread::sleep(timeout_dur);
+                if !flag.load(Ordering::Relaxed) {
+                    flag.store(true, Ordering::Relaxed);
+                    handle.lock().unwrap().kill().ok();
+                }
+            }))
+        } else {
+            None
+        };
+
         let exec_result = context.execute(&snippet.src);
+
+        // Signal the watchdog to not kill the process.
+        timed_out.store(true, Ordering::Relaxed);
+        if let Some(wd) = watchdog {
+            let _ = wd.join();
+        }
+
         let elapsed = start.elapsed();
         tracing::debug!(id = %snippet.id, ok = exec_result.is_ok(), "context.execute returned");
 
@@ -153,6 +236,10 @@ pub(crate) fn run(
         let stdout = collect_pending(&stdout_rx);
         let stderr = collect_pending(&stderr_rx);
 
+        let was_timeout = effective_timeout
+            .map(|t| elapsed >= t.saturating_sub(Duration::from_millis(50)))
+            .unwrap_or(false);
+
         let (outcome, mime_map) = match exec_result {
             Ok(eval_outputs) => {
                 tracing::debug!(
@@ -160,14 +247,81 @@ pub(crate) fn run(
                     mime_types = ?eval_outputs.content_by_mime_type.keys().collect::<Vec<_>>(),
                     "eval succeeded"
                 );
+                // Update the offset map with newly defined items.
+                let current_names: Vec<String> =
+                    context.defined_item_names().map(str::to_owned).collect();
+                let new_names = current_names
+                    .iter()
+                    .filter(|n| !prev_item_names.contains(n))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                offset_map.record_submission(&snippet.id, &snippet.src, new_names.iter());
+                prev_item_names = current_names;
+
                 (SnippetOutcome::Ok, eval_outputs.content_by_mime_type)
             }
-            Err(evcxr::Error::CompilationErrors(errors)) => {
-                tracing::warn!(id = %snippet.id, errors = ?errors, "compile error");
+            Err(evcxr::Error::CompilationErrors(ref errors)) => {
+                tracing::warn!(id = %snippet.id, n = errors.len(), "compile error");
+                let sidecar =
+                    error_capture::classify_compile_error(errors, &snippet.id, &snippet.src);
+                if let Err(io) = error_capture::write_error_sidecar(cache_dir, &sidecar, false) {
+                    tracing::warn!(id = %snippet.id, error = %io, "failed to write compile error sidecar");
+                }
                 (SnippetOutcome::CompileError, HashMap::new())
             }
-            Err(e) => {
-                tracing::warn!(id = %snippet.id, error = %e, "runtime error");
+            Err(evcxr::Error::TypeRedefinedVariablesLost(ref vars)) => {
+                tracing::warn!(id = %snippet.id, ?vars, "TypeRedefinedVariablesLost");
+                let msg = format!(
+                    "type redefinition caused variables to be lost: {}",
+                    vars.join(", ")
+                );
+                let sidecar =
+                    error_capture::classify_internal(&msg, "warning", &snippet.id, &snippet.src);
+                if let Err(io) =
+                    error_capture::write_error_sidecar(cache_dir, &sidecar, !stdout.is_empty())
+                {
+                    tracing::warn!(id = %snippet.id, error = %io, "failed to write internal sidecar");
+                }
+                // WHY: treat as RuntimePanic here because the snippet did run
+                // but produced an unusual evcxr state change. D-011 says
+                // let bindings are lost; we surface the warning in the doc.
+                (SnippetOutcome::RuntimePanic, HashMap::new())
+            }
+            Err(evcxr::Error::SubprocessTerminated(ref msg)) => {
+                tracing::warn!(id = %snippet.id, msg = %msg, timeout = was_timeout, "subprocess terminated");
+                if was_timeout {
+                    let dur = effective_timeout.unwrap_or(DEFAULT_SNIPPET_TIMEOUT);
+                    let sidecar = error_capture::classify_timeout(
+                        dur,
+                        stdout.len(),
+                        &snippet.id,
+                        &snippet.src,
+                    );
+                    if let Err(io) =
+                        error_capture::write_error_sidecar(cache_dir, &sidecar, !stdout.is_empty())
+                    {
+                        tracing::warn!(id = %snippet.id, error = %io, "failed to write timeout sidecar");
+                    }
+                    (SnippetOutcome::Timeout, HashMap::new())
+                } else {
+                    let sidecar =
+                        error_capture::classify_panic(msg, &stderr, &snippet.id, &snippet.src);
+                    let has_partial = !stdout.is_empty();
+                    if let Err(io) =
+                        error_capture::write_error_sidecar(cache_dir, &sidecar, has_partial)
+                    {
+                        tracing::warn!(id = %snippet.id, error = %io, "failed to write panic sidecar");
+                    }
+                    (SnippetOutcome::RuntimePanic, HashMap::new())
+                }
+            }
+            Err(evcxr::Error::Message(ref msg)) => {
+                tracing::warn!(id = %snippet.id, msg = %msg, "internal evcxr error");
+                let sidecar =
+                    error_capture::classify_internal(msg, "error", &snippet.id, &snippet.src);
+                if let Err(io) = error_capture::write_error_sidecar(cache_dir, &sidecar, false) {
+                    tracing::warn!(id = %snippet.id, error = %io, "failed to write internal sidecar");
+                }
                 (SnippetOutcome::RuntimePanic, HashMap::new())
             }
         };
@@ -189,6 +343,16 @@ pub(crate) fn run(
                 }
             }
             mime_sidecars = written;
+        } else if matches!(
+            outcome,
+            SnippetOutcome::RuntimePanic | SnippetOutcome::Timeout
+        ) && !stdout.is_empty()
+        {
+            // Write partial stdout sidecar for panic/timeout so rust-out shows it.
+            let txt_path = cache_dir.join(format!("{}.txt", snippet.id));
+            if let Err(e) = write_atomically(&txt_path, stdout.as_bytes()) {
+                tracing::warn!(id = %snippet.id, error = %e, "failed to write partial stdout sidecar");
+            }
         }
 
         let result = SnippetResult {
@@ -410,7 +574,7 @@ fn is_evaluable(kind: SnippetKind) -> bool {
     )
 }
 
-fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), Error> {
+pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), Error> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -437,6 +601,7 @@ mod tests {
                 version: version.map(|v| v.to_owned()),
                 features: features.iter().map(|f| f.to_string()).collect(),
             },
+            timeout_ms: None,
         }
     }
 

@@ -82,6 +82,7 @@ pub(crate) fn discover(entry: &Path, root: &Path) -> Result<Vec<Snippet>, Error>
 
         // Parse kind-specific options from the options bag.
         let options = parse_snippet_options(kind, &raw.options);
+        let timeout_ms = parse_timeout_ms(&raw.options);
 
         // doc_order: prefer loc.doc_order from the shared counter (T-I04),
         // fall back to JSON-array order for backward-compat with old packages.
@@ -95,6 +96,7 @@ pub(crate) fn discover(entry: &Path, root: &Path) -> Result<Vec<Snippet>, Error>
             doc_order,
             src: raw.src,
             options,
+            timeout_ms,
         });
     }
 
@@ -125,6 +127,7 @@ pub(crate) fn discover(entry: &Path, root: &Path) -> Result<Vec<Snippet>, Error>
                 version: raw_dep.version,
                 features: raw_dep.features,
             },
+            timeout_ms: None,
         });
     }
 
@@ -199,6 +202,38 @@ fn parse_snippet_options(kind: SnippetKind, options: &serde_json::Value) -> Snip
         }
         _ => SnippetOptions::None,
     }
+}
+
+/// Parse the optional `timeout:` kwarg from the options bag into milliseconds.
+///
+/// Typst sends `timeout: auto` (null), a duration dict, an integer (seconds),
+/// or a string like "30s". We accept the common formats and ignore unknown
+/// ones, falling back to `None` (use the global default).
+fn parse_timeout_ms(options: &serde_json::Value) -> Option<u64> {
+    let v = options.get("timeout")?;
+    if v.is_null() {
+        return None;
+    }
+    // Integer → seconds.
+    if let Some(secs) = v.as_u64() {
+        return Some(secs * 1000);
+    }
+    // String "30s", "5min", "1000ms", etc.
+    if let Some(s) = v.as_str() {
+        if s == "auto" || s == "none" {
+            return None;
+        }
+        if let Some(ms) = s.strip_suffix("ms").and_then(|n| n.parse::<u64>().ok()) {
+            return Some(ms);
+        }
+        if let Some(s2) = s.strip_suffix("min").and_then(|n| n.parse::<u64>().ok()) {
+            return Some(s2 * 60 * 1000);
+        }
+        if let Some(s2) = s.strip_suffix('s').and_then(|n| n.parse::<u64>().ok()) {
+            return Some(s2 * 1000);
+        }
+    }
+    None
 }
 
 fn parse_kind(s: &str) -> Option<SnippetKind> {
