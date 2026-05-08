@@ -476,9 +476,10 @@ impl Project {
             let m = outcome.cache_misses;
             (outcome.results, h, m)
         } else {
-            let results = eval::skip_all(&self.snippets);
-            let n = results.len();
-            (results, 0, n)
+            let outcome = eval::skip_all_with_cache(&self.snippets, &cache_dir)?;
+            let h = outcome.cache_hits;
+            let m = outcome.cache_misses;
+            (outcome.results, h, m)
         };
 
         Ok(EvaluationReport {

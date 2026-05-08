@@ -1,13 +1,7 @@
 // Copyright 2026 The evcxr-typst Authors.
 // Licensed under MIT OR Apache-2.0.
 
-//! Snippet-output cache: content-addressed store (CAS) + id-addressed view.
-//!
-//! See `docs/design/cache.md` for the full layout and key formula.
-//! The CAS lives at `.evcxr-typst-cache/v1/cas/<XX>/<64-hex>/`; the
-//! id-addressed view is materialised as hardlinks (or copies on cross-fs) at
-//! `.evcxr-typst-cache/<id>.<ext>`. Typst only ever reads the view; it has no
-//! awareness of the CAS.
+//! Snippet-output cache: CAS + id-addressed view. See `docs/design/cache.md`.
 
 use std::collections::HashMap;
 use std::fs;
@@ -198,7 +192,7 @@ pub(crate) fn store(cache_root: &Path, key: &str, snippet_id: &str) -> Result<()
         &key[..8],
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.subsec_nanos())
+            .map(|d| d.as_nanos())
             .unwrap_or(0)
     ));
     fs::create_dir_all(&tmp_staging)?;
@@ -333,7 +327,7 @@ pub(crate) fn write_index(
     fs::create_dir_all(&tmp_dir_path)?;
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.subsec_nanos())
+        .map(|d| d.as_nanos())
         .unwrap_or(0);
     let tmp = tmp_dir_path.join(format!("index-{nanos}.json"));
     let bytes = serde_json::to_vec(index)
@@ -553,9 +547,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hardlink_fallback_to_copy() {
-        // We can't easily create cross-device scenarios, but we can test that
-        // materialise_view writes files via copy when hard_link would fail.
+    fn test_materialise_view_basic() {
         let dir = tempfile::tempdir().unwrap();
         let cas = dir.path().join("cas");
         fs::create_dir_all(&cas).unwrap();
@@ -564,8 +556,22 @@ mod tests {
         let view_root = dir.path().join("view");
         fs::create_dir_all(&view_root).unwrap();
 
-        // materialise_view copies from cas to view_root.
         materialise_view(&view_root, &cas).unwrap();
         assert_eq!(fs::read(view_root.join("snippet.txt")).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn test_is_cross_device_exdev() {
+        // Verify is_cross_device recognises EXDEV (raw OS error 18 on Unix).
+        #[cfg(unix)]
+        {
+            let e = std::io::Error::from_raw_os_error(18); // EXDEV
+            assert!(is_cross_device(&e), "raw OS error 18 must be cross-device");
+        }
+        #[cfg(not(unix))]
+        {
+            let e = std::io::Error::from(std::io::ErrorKind::Other);
+            let _ = is_cross_device(&e);
+        }
     }
 }

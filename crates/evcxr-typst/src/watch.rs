@@ -1,10 +1,7 @@
 // Copyright 2026 The evcxr-typst Authors.
 // Licensed under MIT OR Apache-2.0.
 
-//! Watch loop: notify-based file watching + change classification + re-eval.
-//!
-//! See `docs/design/watch-loop.md` for the full algorithm and classification
-//! rules implemented here.
+//! Watch loop: notify watcher + change classification + re-eval. See `docs/design/watch-loop.md`.
 
 use std::collections::HashMap;
 use std::fs;
@@ -194,7 +191,7 @@ fn run_one_cycle(
     let curr =
         discovery::discover(entry, root).map_err(|e| CycleError::QueryFailed(e.to_string()))?;
 
-    let plan = classify(prev, &curr, cache_dir, *prev_had_panic);
+    let plan = classify(prev, &curr, *prev_had_panic);
     tracing::debug!(plan = ?plan_name(&plan), "watch cycle plan");
 
     *prev_had_panic = false;
@@ -274,7 +271,7 @@ fn eval_one(
     stderr_rx: &Option<Receiver<String>>,
 ) -> Result<bool, CycleError> {
     if snippet.kind == SnippetKind::Dep {
-        let directive = eval::format_dep_directive_pub(snippet);
+        let directive = eval::format_dep_directive(snippet);
         if let Some(rx) = stdout_rx {
             drain_rx(rx);
         }
@@ -291,7 +288,7 @@ fn eval_one(
         }
         return Ok(false);
     }
-    if !eval::is_evaluable_pub(snippet.kind) {
+    if !eval::is_evaluable(snippet.kind) {
         return Ok(false);
     }
 
@@ -338,7 +335,7 @@ fn eval_one(
 
     match exec_result {
         Ok(eval_outputs) => {
-            let _ = eval::write_mime_sidecars_pub(
+            let _ = eval::write_mime_sidecars(
                 cache_dir,
                 &snippet.id,
                 &eval_outputs.content_by_mime_type,
@@ -425,7 +422,7 @@ fn plan_name(plan: &Plan) -> &'static str {
 ///
 /// When `force_reset` is true (D-011 panic), LeafEdit is upgraded to
 /// ResetAndReplay to ensure the context is clean after a prior panic.
-fn classify(prev: &[Snippet], curr: &[Snippet], _cache_dir: &Path, force_reset: bool) -> Plan {
+fn classify(prev: &[Snippet], curr: &[Snippet], force_reset: bool) -> Plan {
     // Build prev id → index maps.
     let prev_by_id: HashMap<&str, usize> = prev
         .iter()
@@ -748,7 +745,7 @@ mod tests {
         let s = make_snippet("a", "println!(\"hi\");", 0);
         let prev = [s.clone()];
         let curr = [s];
-        let plan = classify(&prev, &curr, &PathBuf::from("."), false);
+        let plan = classify(&prev, &curr, false);
         assert!(matches!(plan, Plan::Noop));
     }
 
@@ -758,7 +755,7 @@ mod tests {
         let s2 = make_snippet("b", "println!(\"bye\");", 1);
         let prev = [s1.clone()];
         let curr = [s1, s2];
-        let plan = classify(&prev, &curr, &PathBuf::from("."), false);
+        let plan = classify(&prev, &curr, false);
         assert!(matches!(plan, Plan::AppendOnly { .. }));
     }
 
@@ -766,7 +763,7 @@ mod tests {
     fn test_classify_truncate_only() {
         let s1 = make_snippet("a", "println!(\"hi\");", 0);
         let s2 = make_snippet("b", "println!(\"bye\");", 1);
-        let plan = classify(&[s1.clone(), s2], &[s1], &PathBuf::from("."), false);
+        let plan = classify(&[s1.clone(), s2], &[s1], false);
         assert!(matches!(plan, Plan::TruncateOnly { .. }));
     }
 
@@ -775,7 +772,7 @@ mod tests {
         let s1 = make_snippet("a", "println!(\"hi\");", 0);
         let s2a = make_snippet("b", "println!(\"old\");", 1);
         let s2b = make_snippet("b", "println!(\"new\");", 1);
-        let plan = classify(&[s1.clone(), s2a], &[s1, s2b], &PathBuf::from("."), false);
+        let plan = classify(&[s1.clone(), s2a], &[s1, s2b], false);
         assert!(matches!(plan, Plan::LeafEdit { .. }));
     }
 
@@ -785,7 +782,7 @@ mod tests {
         let s2a = make_snippet("b", "println!(\"old\");", 1);
         // fn definition — not a leaf.
         let s2b = make_snippet("b", "fn helper() {} helper();", 1);
-        let plan = classify(&[s1.clone(), s2a], &[s1, s2b], &PathBuf::from("."), false);
+        let plan = classify(&[s1.clone(), s2a], &[s1, s2b], false);
         assert!(matches!(plan, Plan::ResetAndReplay { .. }));
     }
 
@@ -795,12 +792,7 @@ mod tests {
         let s2a = make_snippet("b", "println!(\"old\");", 1);
         let s2b = make_snippet("b", "println!(\"new\");", 1);
         let s3 = make_snippet("c", "println!(\"3\");", 2);
-        let plan = classify(
-            &[s1.clone(), s2a, s3.clone()],
-            &[s1, s2b, s3],
-            &PathBuf::from("."),
-            false,
-        );
+        let plan = classify(&[s1.clone(), s2a, s3.clone()], &[s1, s2b, s3], false);
         assert!(matches!(plan, Plan::ResetAndReplay { from_index: 1, .. }));
     }
 
@@ -808,7 +800,7 @@ mod tests {
     fn test_classify_id_renamed() {
         let s_old = make_snippet("old-id", "println!(\"hi\");", 0);
         let s_new = make_snippet("new-id", "println!(\"hi\");", 0);
-        let plan = classify(&[s_old], &[s_new], &PathBuf::from("."), false);
+        let plan = classify(&[s_old], &[s_new], false);
         assert!(matches!(plan, Plan::IdRenamed { .. }));
     }
 

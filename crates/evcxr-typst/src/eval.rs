@@ -34,24 +34,6 @@ pub(crate) struct EvalOutcome {
     pub cache_misses: usize,
 }
 
-/// Format a `:dep` directive for use by `watch.rs`.
-pub(crate) fn format_dep_directive_pub(snippet: &Snippet) -> String {
-    format_dep_directive(snippet)
-}
-/// Whether a snippet kind needs evaluation — used by `watch.rs`.
-pub(crate) fn is_evaluable_pub(kind: SnippetKind) -> bool {
-    is_evaluable(kind)
-}
-/// Write MIME sidecars — used by `watch.rs`.
-pub(crate) fn write_mime_sidecars_pub(
-    cache_dir: &Path,
-    id: &str,
-    content_by_mime_type: &HashMap<String, String>,
-    plain_stdout: &str,
-) -> Result<Vec<PathBuf>, Error> {
-    write_mime_sidecars(cache_dir, id, content_by_mime_type, plain_stdout)
-}
-
 pub(crate) fn run(
     snippets: &[Snippet],
     cache_dir: &Path,
@@ -301,7 +283,7 @@ pub(crate) fn run(
 /// forwarded stdout for the `.txt` sidecar. If both are present, the MIME
 /// payload is written and the forwarded stdout is discarded (explicit wins).
 /// If only `plain_stdout` is non-empty, it is written as the `.txt` sidecar.
-fn write_mime_sidecars(
+pub(crate) fn write_mime_sidecars(
     cache_dir: &Path,
     id: &str,
     content_by_mime_type: &HashMap<String, String>,
@@ -412,7 +394,7 @@ fn is_unknown_mime(mime: &str) -> bool {
 /// where `<config>` is a TOML value (e.g. `"1"` or `{ version = "1",
 /// features = ["derive"] }`). A name containing `=` is passed through
 /// verbatim as a TOML fragment.
-fn format_dep_directive(snippet: &Snippet) -> String {
+pub(crate) fn format_dep_directive(snippet: &Snippet) -> String {
     let SnippetOptions::Dep {
         spec,
         version,
@@ -462,6 +444,83 @@ fn collect_pending(rx: &Receiver<String>) -> String {
     out
 }
 
+/// Like `skip_all` but checks the cache first; returns `CacheHit` for snippets
+/// whose output is already in the CAS. Used on the deny-eval path so cached
+/// results are still served without running evcxr.
+pub(crate) fn skip_all_with_cache(
+    snippets: &[Snippet],
+    cache_dir: &Path,
+) -> Result<EvalOutcome, Error> {
+    if !cache_dir.exists() {
+        return Ok(EvalOutcome {
+            results: skip_all(snippets),
+            cache_hits: 0,
+            cache_misses: snippets.len(),
+        });
+    }
+    let env = CacheEnv::collect(&[]);
+    let mut prior_chain = cache::initial_chain();
+    let mut active_deps: Vec<&Snippet> = Vec::new();
+    let index = cache::read_index(cache_dir);
+    let mut results = Vec::with_capacity(snippets.len());
+    let mut cache_hits = 0usize;
+    let mut cache_misses = 0usize;
+
+    for snippet in snippets {
+        if snippet.kind == SnippetKind::Dep {
+            active_deps.push(snippet);
+            results.push(SnippetResult {
+                id: snippet.id.clone(),
+                outcome: SnippetOutcome::SkippedNoEval,
+                stdout: String::new(),
+                stderr: String::new(),
+                elapsed: Duration::ZERO,
+                mime_sidecars: Vec::new(),
+            });
+            prior_chain = cache::advance_chain(&prior_chain, &snippet.src);
+            continue;
+        }
+        if !is_evaluable(snippet.kind) {
+            results.push(SnippetResult {
+                id: snippet.id.clone(),
+                outcome: SnippetOutcome::Ok,
+                stdout: String::new(),
+                stderr: String::new(),
+                elapsed: Duration::ZERO,
+                mime_sidecars: Vec::new(),
+            });
+            continue;
+        }
+        let key = cache::compute_key(snippet, &prior_chain, &active_deps, &env);
+        let cached_key_matches = index.get(&snippet.id).map(|k| k == &key).unwrap_or(false);
+        let outcome = if cached_key_matches
+            && matches!(
+                cache::lookup(cache_dir, &key, &snippet.id),
+                Ok(cache::LookupResult::Hit)
+            ) {
+            cache_hits += 1;
+            SnippetOutcome::CacheHit
+        } else {
+            cache_misses += 1;
+            SnippetOutcome::SkippedNoEval
+        };
+        results.push(SnippetResult {
+            id: snippet.id.clone(),
+            outcome,
+            stdout: String::new(),
+            stderr: String::new(),
+            elapsed: Duration::ZERO,
+            mime_sidecars: Vec::new(),
+        });
+        prior_chain = cache::advance_chain(&prior_chain, &snippet.src);
+    }
+    Ok(EvalOutcome {
+        results,
+        cache_hits,
+        cache_misses,
+    })
+}
+
 pub(crate) fn skip_all(snippets: &[Snippet]) -> Vec<SnippetResult> {
     snippets
         .iter()
@@ -480,7 +539,7 @@ pub(crate) fn skip_all(snippets: &[Snippet]) -> Vec<SnippetResult> {
         .collect()
 }
 
-fn is_evaluable(kind: SnippetKind) -> bool {
+pub(crate) fn is_evaluable(kind: SnippetKind) -> bool {
     matches!(
         kind,
         SnippetKind::Rust
