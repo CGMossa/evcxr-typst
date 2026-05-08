@@ -17,7 +17,9 @@
 //!
 //! Mirrors what `evcxr-typst run --allow-eval <path>` does end-to-end:
 //! discover snippets, evaluate them through the library API, then shell out
-//! to `typst compile` to produce the PDF.
+//! to `typst compile` to render the document. Output is SVG (one file per
+//! page) — text format chosen so the dev loop can inspect the rendered
+//! result without a PDF viewer.
 
 use std::path::Path;
 use std::process::Command;
@@ -57,24 +59,46 @@ fn main() -> anyhow::Result<()> {
     }
 
     let cache_typst_path = project.cache_dir_typst_path()?;
-    typst_compile(project.root(), Path::new(&path), &cache_typst_path)?;
+    let entry = Path::new(&path);
+    let pdf = output_path(entry, "pdf");
+    let svg = output_path(entry, "svg");
+    typst_compile(project.root(), entry, &cache_typst_path, "pdf", &pdf)?;
+    typst_compile(project.root(), entry, &cache_typst_path, "svg", &svg)?;
     Ok(())
 }
 
-fn typst_compile(root: &Path, entry: &Path, cache_typst_path: &str) -> anyhow::Result<()> {
+fn typst_compile(
+    root: &Path,
+    entry: &Path,
+    cache_typst_path: &str,
+    format: &str,
+    output: &Path,
+) -> anyhow::Result<()> {
     let status = Command::new("typst")
         .arg("compile")
         .arg("--root")
         .arg(root)
+        .arg("--format")
+        .arg(format)
         .arg("--input")
         .arg("evcxr-mode=read")
         .arg("--input")
         .arg(format!("evcxr-cache={cache_typst_path}"))
         .arg(entry)
+        .arg(output)
         .status()
         .context("spawning `typst compile`")?;
     if !status.success() {
-        bail!("`typst compile` failed (status {status})");
+        bail!("`typst compile` ({format}) failed (status {status})");
     }
     Ok(())
+}
+
+fn output_path(entry: &Path, ext: &str) -> std::path::PathBuf {
+    let stem = entry
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("output");
+    let parent = entry.parent().unwrap_or_else(|| Path::new("."));
+    parent.join(format!("{stem}.{ext}"))
 }

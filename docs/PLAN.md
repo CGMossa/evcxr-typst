@@ -18,12 +18,12 @@ The thinnest vertical slice that proves the architecture works.
   1. shells out to `typst query --field value <main.typ> '<evcxr-snippet>'`, getting JSON of snippets in document order;
   2. drives one `evcxr::CommandContext` through the snippets sequentially, capturing stdout via the existing `EvalContextOutputs` channels;
   3. writes one sidecar text file per snippet (keyed by stable id);
-  4. shells out to `typst compile <main.typ>` to render the final PDF.
+  4. shells out to `typst compile` twice — once for PDF (`<stem>.pdf`, the user-facing artifact) and once for SVG (`<stem>.svg`, for visual quick-look in a browser without a PDF viewer). Note that Typst's SVG renders glyphs as `<path>` references, not `<text>` elements, so the SVG is *not* a text record of what evaluated; for that, the agent / dev loop reads `.evcxr-typst-cache/<id>.txt`. Multi-page documents need `typst compile` invoked directly with a `{p}` template.
 - An `examples/hello/` document with three snippets, where snippet 2 uses a `let` binding from snippet 1, demonstrating that evcxr's persistent state works.
 
 **Out of scope here:** image/HTML MIME output, watch mode, cache, fallback rendering, error pretty-printing, multiple documents, anything Universe-related.
 
-**Done when:** `cargo run -p evcxr-typst -- run examples/hello/main.typ` produces a PDF that contains the printed output of all three snippets, and snippet 2's output references state defined in snippet 1.
+**Done when:** `cargo run -p evcxr-typst -- run examples/hello/main.typ` produces both a PDF and per-page SVG that contain the printed output of all three snippets, and snippet 2's output references state defined in snippet 1.
 
 ## Phase 2 — MIME passthrough + structured outputs
 

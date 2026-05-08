@@ -11,7 +11,8 @@ main.typ ── │  1. typst query   → snippet list (JSON)      │
             │  2. evcxr::CommandContext, drive top→bottom  │
             │     (:dep persists, :cache=on, vars persist) │
             │  3. write sidecars (stdout, images, cbor…)   │── .evcxr-typst-cache/<id>.{txt,png,cbor,…}
-            │  4. typst compile|watch                      │
+            │  4. typst compile (→ PDF + SVG)              │
+            │     | typst watch                            │
             └──────────────────────────────────────────────┘
                                 │
                                 ▼
@@ -123,9 +124,13 @@ Long-lived `CommandContext`. Watch the `.typ` file with `notify`. On change:
 
 The "just reset on middle-edit" choice is honest and simple. Snapshot/restore inside evcxr would be the principled fix, but that's a substantial upstream change and we should measure first. Detail in `docs/design/watch-loop.md`.
 
+## Render outputs
+
+`evcxr-typst run` shells out to `typst compile` **twice**: once for `<stem>.pdf` (the user-facing artifact) and once for `<stem>.svg` next to the entry file. PDF is what authors actually distribute; SVG is for the dev loop — opening fast in a browser, easy to diff visually. Typst's SVG embeds glyphs as `<path>` references rather than `<text>` elements, so the SVG is not text-grep-able for snippet output; for that, agents and scripts read the textual sidecars at `.evcxr-typst-cache/<id>.txt`. The two together cover "did it lay out" (SVG) and "did it evaluate" (sidecars). Multi-page documents need `typst compile` invoked directly with a `{p}` template.
+
 ## Fallback / safety
 
-`typst compile main.typ` of a document that uses our package, **without** running our CLI, must be safe and must produce a sensible-looking PDF (placeholder boxes where evaluated output would go). Concretely:
+`typst compile main.typ` of a document that uses our package, **without** running our CLI, must be safe and must produce sensible output (placeholder boxes where evaluated output would go), in whichever format the user requests. Concretely:
 
 - The Typst package detects missing sidecar files and renders a placeholder.
 - The CLI requires `--allow-eval` to actually execute Rust. Otherwise it does query + sidecar-validity-check only.

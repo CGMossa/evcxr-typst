@@ -47,6 +47,7 @@ Each scaffolding directory has a local `CLAUDE.md` with directory-specific conve
 - Keep `docs/` source-of-truth current: PLAN, ARCHITECTURE, BACKLOG, DECISIONS. If you make a non-trivial design choice mid-task, append a decision record rather than burying it in a commit message.
 - Default to no comments in code; one short line max when WHY is non-obvious. (Same rule the global `CLAUDE.md` already enforces.)
 - This repo's git history is fresh — feel free to make small commits. Do **not** push to a remote without explicit instruction; no remote is configured by default.
+- **`evcxr-typst run` renders both PDF and SVG** next to the entry file (`<stem>.pdf` and `<stem>.svg`). PDF is the user-facing artifact; SVG is for visual quick-look in a browser without a PDF viewer. Note that Typst SVG embeds glyphs as `<path>` references rather than `<text>` elements, so the SVG is **not** text-grep-able for snippet output — when an agent (or a script) needs to verify *what was evaluated*, read the textual sidecars at `<entry-parent>/.evcxr-typst-cache/<id>.txt` instead. The two together cover the dev loop: SVG for "did it lay out", sidecars for "did it evaluate". Multi-page documents will need `typst compile` invoked directly with a `{p}` template, since the single-file SVG path only works when the document fits one page.
 
 ## What NOT to do without checking first
 
