@@ -43,10 +43,12 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+mod cache;
 mod discovery;
 mod error_capture;
 mod eval;
 mod identity;
+mod watch;
 
 /// Errors returned by the library.
 ///
@@ -360,7 +362,7 @@ pub struct WatchOptions {
 }
 
 #[derive(Debug, Default, Clone, Copy)]
-enum WatchEval {
+pub(crate) enum WatchEval {
     #[default]
     Deny,
     Allow,
@@ -384,14 +386,19 @@ impl WatchOptions {
 
 /// Handle to a running watch loop. Drop or [`WatchHandle::join`] to stop.
 pub struct WatchHandle {
-    #[allow(dead_code)]
-    private: (),
+    pub(crate) shutdown: crossbeam_channel::Sender<()>,
+    pub(crate) thread: std::thread::JoinHandle<Result<(), Error>>,
 }
 
 impl WatchHandle {
     /// Block until the watch loop exits.
+    ///
+    /// Sends the shutdown signal then waits for the thread to finish.
     pub fn join(self) -> Result<(), Error> {
-        Err(Error::NotImplemented("WatchHandle::join"))
+        let _ = self.shutdown.try_send(());
+        self.thread
+            .join()
+            .unwrap_or_else(|_| Err(Error::Evcxr("watch thread panicked".into())))
     }
 }
 
@@ -467,39 +474,48 @@ impl Project {
         let start = Instant::now();
         let cache_dir = self.cache_dir();
 
-        // Phase 1 (T-I03) does not yet route the user-supplied callbacks
-        // through the eval loop — `EvalOptions::with_callbacks` is reserved
-        // for the watch task. Hook them up alongside that work.
-        let snippet_results = if options.allow_eval {
+        let (snippet_results, hits, misses) = if options.allow_eval {
             let outcome = eval::run(&self.snippets, &cache_dir, None, options.snippet_timeout)?;
-            outcome.results
+            let h = outcome.cache_hits;
+            let m = outcome.cache_misses;
+            (outcome.results, h, m)
         } else {
-            eval::skip_all(&self.snippets)
+            let outcome = eval::skip_all_with_cache(&self.snippets, &cache_dir)?;
+            let h = outcome.cache_hits;
+            let m = outcome.cache_misses;
+            (outcome.results, h, m)
         };
 
         Ok(EvaluationReport {
             snippets: snippet_results,
             deps_resolved: Vec::new(),
             elapsed: start.elapsed(),
-            cache_hits: 0,
-            cache_misses: self.snippets.len(),
+            cache_hits: hits,
+            cache_misses: misses,
         })
     }
 
     /// Spawn the watch loop. The returned [`WatchHandle`] keeps the loop
     /// alive; drop or [`WatchHandle::join`] to stop it.
-    pub fn watch(&mut self, _options: &WatchOptions) -> Result<WatchHandle, Error> {
-        Err(Error::NotImplemented("Project::watch"))
+    pub fn watch(&mut self, options: &WatchOptions) -> Result<WatchHandle, Error> {
+        watch::run(
+            self.entry.clone(),
+            self.root.clone(),
+            self.snippets.clone(),
+            options,
+        )
     }
 
     /// Drop materialised sidecars for this project. CAS contents are
     /// preserved (D-010).
     pub fn clean_view(&self) -> Result<(), Error> {
-        let cache_dir = self.cache_dir();
-        if cache_dir.exists() {
-            std::fs::remove_dir_all(&cache_dir)?;
-        }
-        Ok(())
+        cache::clean_view(&self.cache_dir())
+    }
+
+    /// Run the cache GC: drop CAS entries not referenced by the current
+    /// `v1/index.json`. Returns the number of CAS entries removed.
+    pub fn gc(&self) -> Result<usize, Error> {
+        cache::gc(&self.cache_dir())
     }
 
     fn cache_dir(&self) -> PathBuf {

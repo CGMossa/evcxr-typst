@@ -44,10 +44,16 @@ enum Cmd {
         root: Option<PathBuf>,
     },
     /// Drop the snippet-output sidecars for a document. CAS contents are kept.
+    ///
+    /// With `--gc`: additionally evict CAS entries not referenced by the
+    /// current run's index.
     Clean {
         path: PathBuf,
         #[arg(long)]
         root: Option<PathBuf>,
+        /// Run the cache GC after cleaning the view (drops unreferenced CAS entries).
+        #[arg(long)]
+        gc: bool,
     },
 }
 
@@ -109,9 +115,13 @@ pub fn run() -> Result<()> {
             handle.join()?;
             Ok(())
         }
-        Cmd::Clean { path, root } => {
+        Cmd::Clean { path, root, gc } => {
             let project = open_project(&path, root)?;
             project.clean_view()?;
+            if gc {
+                let removed = project.gc()?;
+                eprintln!("GC: removed {removed} unused CAS entries");
+            }
             Ok(())
         }
     }

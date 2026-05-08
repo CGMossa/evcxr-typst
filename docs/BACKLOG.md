@@ -214,13 +214,14 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ### T-I05 · `evcxr-typst watch` + caching
 
-- **Status:** open
+- **Status:** done · phase3/watch-and-cache
 - **Phase:** 3
-- **Depends on:** T-I04 (done), T-D05 (done)
+- **Depends on:** T-I04, T-D05
+- **Resolution:** Implemented `cache.rs` (Blake3 CAS, Merkle chain, hardlink/copy materialisation, GC, index read/write, skip-if-unchanged per D-016) and `watch.rs` (notify v8 + crossbeam-channel 150 ms trailing-edge debounce, `classify` → `Plan` enum, `is_leaf` via syn parse, `run_one_cycle` for append/truncate/leaf/reset strategies, Backoff). `eval.rs` extended with cache hit/miss tracking and CAS store-after-eval. `lib.rs` wires `Project::watch` → `watch::run`, `Project::gc`. CLI gains `--gc` to `clean`. All quality gates clean: clippy -D warnings, fmt, doc, tests (22 pass).
 
 ### T-I06 · Fallback safety + `--allow-eval`
 
-- **Status:** blocked
+- **Status:** open
 - **Phase:** 4
 - **Depends on:** T-I02, T-I05
 
