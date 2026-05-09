@@ -416,7 +416,7 @@ impl WatchHandle {
         let _ = self.shutdown.try_send(());
         self.thread
             .take()
-            .expect("thread already taken by Drop")
+            .expect("thread handle missing (already joined)")
             .join()
             .unwrap_or_else(|_| Err(Error::Evcxr("watch thread panicked".into())))
     }
