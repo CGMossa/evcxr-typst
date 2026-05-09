@@ -21,3 +21,4 @@
 #pagebreak()
 
 #include "hello.typ"
+#include "hello/comment.typ"
