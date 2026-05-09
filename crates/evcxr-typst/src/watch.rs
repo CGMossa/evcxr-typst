@@ -48,6 +48,10 @@ fn watch_thread(
     allow_eval: bool,
     shutdown_rx: crossbeam_channel::Receiver<()>,
 ) -> Result<(), Error> {
+    // notify delivers absolute paths; canonicalize entry once so is_relevant
+    // and watcher.watch see the same shape. Entry exists at this point —
+    // discovery::discover opened it during Project::open_with_config.
+    let entry = std::fs::canonicalize(&entry).map_err(Error::Io)?;
     let cache_dir = cache_dir_for(&entry);
     fs::create_dir_all(&cache_dir)?;
     cache::ensure_readme(&cache_dir)?;
