@@ -14,7 +14,6 @@
 //! from its `available` list.
 
 use std::fs;
-use std::path::PathBuf;
 use std::process::Command;
 
 use evcxr_typst::{EvalOptions, Project, ProjectConfig, SnippetOutcome};
@@ -29,7 +28,7 @@ fn evaluate_continues_when_sidecar_write_fails() {
     }
 
     let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let repo_root = PathBuf::from(&manifest)
+    let repo_root = std::path::PathBuf::from(&manifest)
         .parent()
         .unwrap()
         .parent()
@@ -41,20 +40,28 @@ fn evaluate_continues_when_sidecar_write_fails() {
         return;
     }
 
-    let work = tempfile::tempdir().expect("tempdir");
+    // Create the tempdir *inside* the repo root so Typst can resolve a
+    // relative import to packages/evcxr/lib.typ under --root repo_root.
+    // A tempdir outside repo_root would cause Typst to reroute absolute
+    // import paths as <tmp-root>/… which doesn't exist (the silent-skip bug).
+    let work = tempfile::TempDir::new_in(&repo_root).expect("tempdir in repo root");
     let entry = work.path().join("main.typ");
+
+    // Compute relative path from the tempdir to packages/evcxr/lib.typ.
+    // tempdir is one level below repo_root, so "../packages/evcxr/lib.typ".
+    let rel_lib = "../packages/evcxr/lib.typ";
+
     fs::write(
         &entry,
         format!(
-            "#import \"{pkg}\" as evcxr\n\
+            "#import \"{rel_lib}\" as evcxr\n\
              #evcxr.setup()\n\
              #evcxr.rust(id: \"sidecar-block\", ```rust\nprintln!(\"hello\");\n```)\n",
-            pkg = pkg_lib.to_string_lossy(),
         ),
     )
     .expect("write entry");
 
-    // Create the cache dir and obstruct the sidecar write target with a
+    // Pre-create the cache dir and obstruct the sidecar write target with a
     // non-empty directory so `fs::rename` fails with ENOTEMPTY.
     let cache_dir = work.path().join(".evcxr-typst-cache");
     fs::create_dir_all(&cache_dir).expect("mkdir cache");
@@ -62,7 +69,7 @@ fn evaluate_continues_when_sidecar_write_fails() {
     fs::create_dir_all(&blocker).expect("mkdir blocker");
     fs::write(blocker.join("placeholder"), b"x").expect("non-empty marker");
 
-    let project = Project::open_with_config(&entry, ProjectConfig::new().with_root(work.path()));
+    let project = Project::open_with_config(&entry, ProjectConfig::new().with_root(&repo_root));
     let mut project = match project {
         Ok(p) => p,
         Err(e) => {

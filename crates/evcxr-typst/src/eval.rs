@@ -400,10 +400,7 @@ pub(crate) fn run(
 
         let mut mime_sidecars = Vec::new();
         if matches!(outcome, SnippetOutcome::Ok) {
-            // Treat sidecar-write failure the same way as the panic/stdout-write
-            // block below: warn and continue. Propagating with `?` here would
-            // lose any sidecars already on disk for prior snippets and skip
-            // _index.json, breaking the entire run on a transient I/O error.
+            // Mirror the panic/partial-stdout block below: warn, omit from _index.json.
             match write_mime_sidecars(cache_dir, &snippet.id, &mime_map, &stdout) {
                 Ok(written) => {
                     for path in &written {
