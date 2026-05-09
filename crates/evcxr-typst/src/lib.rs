@@ -398,21 +398,40 @@ impl WatchOptions {
     }
 }
 
-/// Handle to a running watch loop. Drop or [`WatchHandle::join`] to stop.
+/// Handle to a running watch loop.
+///
+/// Dropping the handle is equivalent to calling [`WatchHandle::join`] and
+/// discarding the `Result`; errors will be `tracing::warn!`-logged. Use
+/// [`WatchHandle::join`] to handle errors explicitly.
 pub struct WatchHandle {
     pub(crate) shutdown: crossbeam_channel::Sender<()>,
-    pub(crate) thread: std::thread::JoinHandle<Result<(), Error>>,
+    pub(crate) thread: Option<std::thread::JoinHandle<Result<(), Error>>>,
 }
 
 impl WatchHandle {
     /// Block until the watch loop exits.
     ///
     /// Sends the shutdown signal then waits for the thread to finish.
-    pub fn join(self) -> Result<(), Error> {
+    pub fn join(mut self) -> Result<(), Error> {
         let _ = self.shutdown.try_send(());
         self.thread
+            .take()
+            .expect("thread handle missing (already joined)")
             .join()
             .unwrap_or_else(|_| Err(Error::Evcxr("watch thread panicked".into())))
+    }
+}
+
+impl Drop for WatchHandle {
+    fn drop(&mut self) {
+        if let Some(thread) = self.thread.take() {
+            let _ = self.shutdown.try_send(());
+            match thread.join() {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => tracing::warn!("watch thread error on drop: {e}"),
+                Err(_) => tracing::warn!("watch thread panicked on drop"),
+            }
+        }
     }
 }
 

@@ -37,7 +37,7 @@ pub(crate) fn run(
 
     Ok(WatchHandle {
         shutdown: shutdown_tx,
-        thread: handle,
+        thread: Some(handle),
     })
 }
 
@@ -885,5 +885,42 @@ mod tests {
             let got = is_leaf(&s);
             assert_eq!(got, *expected, "src={src:?} expected={expected} got={got}");
         }
+    }
+
+    /// Dropping a `WatchHandle` must not panic and must join the thread.
+    ///
+    /// We construct a handle whose thread blocks until the shutdown channel
+    /// closes, then drop the handle without calling `join()`. The thread must
+    /// have exited by the time `drop` returns (no orphaned thread, no panic).
+    #[test]
+    fn test_watch_handle_drop_joins_thread() {
+        use crate::WatchHandle;
+        use crossbeam_channel::bounded;
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+
+        let exited = Arc::new(AtomicBool::new(false));
+        let exited_clone = Arc::clone(&exited);
+
+        let (shutdown_tx, shutdown_rx) = bounded::<()>(1);
+        let thread = std::thread::spawn(move || -> Result<(), crate::Error> {
+            let _ = shutdown_rx.recv();
+            exited_clone.store(true, Ordering::SeqCst);
+            Ok(())
+        });
+
+        let handle = WatchHandle {
+            shutdown: shutdown_tx,
+            thread: Some(thread),
+        };
+
+        drop(handle);
+
+        assert!(
+            exited.load(Ordering::SeqCst),
+            "drop did not join the watch thread"
+        );
     }
 }
