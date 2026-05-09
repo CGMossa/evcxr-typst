@@ -10,7 +10,9 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 
-use evcxr_typst::{EvalOptions, Project, ProjectConfig, SnippetOutcome, WatchOptions};
+use evcxr_typst::{
+    Error as LibError, EvalOptions, Project, ProjectConfig, SnippetOutcome, WatchOptions,
+};
 
 #[derive(Parser)]
 #[command(
@@ -167,7 +169,19 @@ fn open_project(path: &Path, root: Option<PathBuf>) -> Result<Project> {
     if let Some(r) = root {
         config = config.with_root(r);
     }
-    Project::open_with_config(path, config).with_context(|| format!("opening {}", path.display()))
+    Project::open_with_config(path, config).map_err(|e| {
+        // Map IncompatibleCliVersion → exit 2 per D-019.
+        if let LibError::IncompatibleCliVersion {
+            ref required,
+            ref actual,
+        } = e
+        {
+            eprintln!("error: this document requires evcxr-typst >= {required}; you have {actual}");
+            eprintln!("\tinstall a newer version: cargo install evcxr-typst");
+            std::process::exit(2);
+        }
+        anyhow::Error::from(e).context(format!("opening {}", path.display()))
+    })
 }
 
 fn typst_compile(

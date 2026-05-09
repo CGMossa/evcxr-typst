@@ -48,6 +48,7 @@ mod discovery;
 mod error_capture;
 mod eval;
 mod identity;
+mod version_check;
 mod watch;
 
 /// Errors returned by the library.
@@ -76,6 +77,19 @@ pub enum Error {
     /// string is the underlying evcxr error rendered with `Display`.
     #[error("evcxr error: {0}")]
     Evcxr(String),
+
+    /// The document requires a newer `evcxr-typst` than the one running
+    /// (D-019 `min-cli` enforcement). The CLI maps this to exit code 2.
+    #[error(
+        "this document requires evcxr-typst >= {required}; you have {actual}\n\
+         \tinstall a newer version: cargo install evcxr-typst"
+    )]
+    IncompatibleCliVersion {
+        /// The `min-cli` version declared by the document.
+        required: String,
+        /// The version of the running CLI (`CARGO_PKG_VERSION`).
+        actual: String,
+    },
 }
 
 /// Kind-specific options carried by a [`Snippet`].
@@ -446,12 +460,19 @@ impl Project {
             .root
             .clone()
             .unwrap_or_else(|| discovery::default_root_for(&entry));
-        let snippets = discovery::discover(&entry, &root)?;
+        let result = discovery::discover(&entry, &root)?;
+
+        // Enforce min-cli before evaluation (D-019). Checked here so library
+        // callers get the same protection as CLI callers.
+        if let Err((required, actual)) = version_check::check(result.min_cli.as_deref()) {
+            return Err(Error::IncompatibleCliVersion { required, actual });
+        }
+
         Ok(Self {
             entry,
             root,
             config,
-            snippets,
+            snippets: result.snippets,
         })
     }
 
