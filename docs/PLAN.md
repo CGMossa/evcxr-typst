@@ -2,13 +2,13 @@
 
 The roadmap. Each phase is a coherent slice that's worth landing on its own; phases roughly correspond to issue milestones. The actionable atoms live in `BACKLOG.md`; this file is the why-and-when narrative.
 
-## Phase 0 — Planning (in progress)
+## Phase 0 — Planning (done)
 
 This phase. Output: this docs/ tree. Enough to onboard a fresh agent and have them produce useful code on the first task.
 
-**Done when:** README, ARCHITECTURE, PLAN, BACKLOG, DECISIONS exist and are internally consistent. Backlog has at least the Phase 1 tasks fully briefed.
+**Done when:** README, ARCHITECTURE, PLAN, BACKLOG, DECISIONS exist and are internally consistent. Backlog has at least the Phase 1 tasks fully briefed. ✓ done — see BACKLOG T-D01..T-D10
 
-## Phase 1 — End-to-end smoke test (no incremental, no caching)
+## Phase 1 — End-to-end smoke test (done)
 
 The thinnest vertical slice that proves the architecture works.
 
@@ -23,9 +23,9 @@ The thinnest vertical slice that proves the architecture works.
 
 **Out of scope here:** image/HTML MIME output, watch mode, cache, fallback rendering, error pretty-printing, multiple documents, anything Universe-related.
 
-**Done when:** `cargo run -p evcxr-typst -- run examples/hello/main.typ` produces both a PDF and per-page SVG that contain the printed output of all three snippets, and snippet 2's output references state defined in snippet 1.
+**Done when:** `cargo run -p evcxr-typst -- run examples/hello/main.typ` produces both a PDF and per-page SVG that contain the printed output of all three snippets, and snippet 2's output references state defined in snippet 1. ✓ done — see BACKLOG T-I01, T-I02, T-L01, T-I03
 
-## Phase 2 — MIME passthrough + structured outputs
+## Phase 2 — MIME passthrough + structured outputs (done)
 
 Plumb the rest of evcxr's `EVCXR_BEGIN_CONTENT <mime> ... EVCXR_END_CONTENT` protocol through to Typst.
 
@@ -36,9 +36,9 @@ Plumb the rest of evcxr's `EVCXR_BEGIN_CONTENT <mime> ... EVCXR_END_CONTENT` pro
 - Add `:dep` support: a `dep(name, version)` Typst function that emits a `<evcxr-dep>` metadata marker; CLI flushes deps before each session.
 - Use `runtimes/evcxr_image` from the evcxr workspace as the test producer for image MIME output.
 
-**Done when:** an example doc renders an evcxr-generated PNG plot inline, and a small `cbor`-roundtripped dictionary is consumed by Typst as a real dictionary.
+**Done when:** an example doc renders an evcxr-generated PNG plot inline, and a small `cbor`-roundtripped dictionary is consumed by Typst as a real dictionary. ✓ done — see BACKLOG T-I04
 
-## Phase 3 — Caching + watch mode
+## Phase 3 — Caching + watch mode (done)
 
 The "interactive / progressive" part.
 
@@ -50,17 +50,17 @@ The "interactive / progressive" part.
   2. let `typst watch` notice the sidecar mtime changes and rebuild incrementally.
 - Honest behavior: editing a snippet in the middle of the document re-evaluates from scratch starting at that snippet (committed_state is forward-only). Document this clearly in the README. Compilation cache makes this much cheaper than it sounds.
 
-**Done when:** editing a snippet in `examples/hello/main.typ` while `evcxr-typst watch` is running causes the PDF to update within a second or two without rebuilding the world from scratch.
+**Done when:** editing a snippet in `examples/hello/main.typ` while `evcxr-typst watch` is running causes the PDF to update within a second or two without rebuilding the world from scratch. ✓ done — see BACKLOG T-I05
 
-## Phase 4 — Safety, polish, distribution
+## Phase 4 — Safety, polish, distribution (partially done)
 
 **Scope:**
-- Fallback rendering: when `--input evcxr-fallback=true` is passed (or the sidecar is missing), the Typst package renders a placeholder box instead of erroring. This is what makes a document safe to compile with bare `typst compile` even though it embeds executable Rust.
-- `--allow-eval` flag on the CLI is required to run snippets; otherwise `evcxr-typst run` refuses with a clear error pointing at this safety guarantee.
-- Pretty error reporting: forward evcxr compilation errors (with source spans) into a sidecar that the Typst package surfaces as a styled error box with the offending snippet highlighted.
-- Publish: Typst package goes to Universe; CLI goes to crates.io. Decide on versioning policy and minimum compatible CLI version (the package should error helpfully if the CLI is too old).
+- Fallback rendering: when `--input evcxr-fallback=true` is passed (or the sidecar is missing), the Typst package renders a placeholder box instead of erroring. This is what makes a document safe to compile with bare `typst compile` even though it embeds executable Rust. ✓ done — see BACKLOG T-I06
+- `--allow-eval` flag on the CLI is required to run snippets; otherwise `evcxr-typst run` refuses with a clear error pointing at this safety guarantee. ✓ done — see BACKLOG T-I06
+- Pretty error reporting: forward evcxr compilation errors (with source spans) into a sidecar that the Typst package surfaces as a styled error box with the offending snippet highlighted. ✓ done — see BACKLOG T-I07
+- Publish: Typst package goes to Universe; CLI goes to crates.io. Decide on versioning policy and minimum compatible CLI version (the package should error helpfully if the CLI is too old). **In progress — T-I08 (min-cli enforcement + 0.1.0 versioning policy) is in PR on `phase4/min-cli-and-version-policy`. Universe + crates.io publish is the remaining open work.**
 
-**Done when:** a user can `typst compile` a document by another author safely (placeholder boxes), then opt into evaluation with `evcxr-typst run --allow-eval`, and get nice errors when their snippet doesn't compile.
+**Done when:** a user can `typst compile` a document by another author safely (placeholder boxes), then opt into evaluation with `evcxr-typst run --allow-eval`, and get nice errors when their snippet doesn't compile. ✓ Safety + errors done (T-I06, T-I07). Publish pending (T-I08).
 
 ## Phase 5 (optional / later) — Editor story
 
