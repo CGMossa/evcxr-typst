@@ -10,10 +10,10 @@ Write one per chapter you port, even if nothing surprising happened ("nothing br
 
 `YYYY-MM-DD-NNN-<slug>.md` where `NNN` is a per-day sequence (so two entries on the same day order cleanly). Slug is the chapter or topic.
 
-Examples:
-- `2026-05-09-001-hello.md`
-- `2026-05-09-002-comments-and-formatted-print.md`
-- `2026-05-10-001-fn-main-fidelity-decision.md`
+Examples (see the on-disk entries for the actual format):
+- `2026-05-09-001-hello.md` — first chapter port; the `fn main()` wrapper-drop convention.
+- `2026-05-09-002-watch-loop-exits-immediately.md` — bug found mid-port; CLI watch arm regression and fix.
+- `2026-05-09-003-comment.md` — second chapter; surfaced two more watch bugs (#27, #28) routed through the subagent PR loop.
 
 ## Entry shape
 

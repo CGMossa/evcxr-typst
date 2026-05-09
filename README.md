@@ -46,7 +46,9 @@ The CLI refuses to execute Rust snippets unless `--allow-eval` is passed explici
 
 ## Caching and watch mode
 
-Snippet output is cached by a Blake3 content-addressed store under `.evcxr-typst-cache/`. Unchanged snippets are skipped on re-run; edited snippets re-evaluate from the first changed snippet forward (evcxr's state is forward-only). Watch mode hooks into `notify` and drives `typst watch` as a child process. See [`docs/design/cache.md`](docs/design/cache.md) and [`docs/design/watch-loop.md`](docs/design/watch-loop.md).
+Snippet output is cached by a Blake3 content-addressed store under `.evcxr-typst-cache/`. Unchanged snippets are skipped on re-run; edited snippets re-evaluate from the first changed snippet forward (evcxr's state is forward-only). Watch mode hooks into `notify` (recursive on the entry's parent dir, so subdirectories of multi-file documents are covered) and drives `typst watch` as a child process. The CLI accepts both relative and absolute entry paths; the entry is canonicalized at watch start so the comparison against notify's absolute event paths works either way. See [`docs/design/cache.md`](docs/design/cache.md) and [`docs/design/watch-loop.md`](docs/design/watch-loop.md).
+
+VSCode users can drive the watch loop through the bundled `.vscode/tasks.json` — `Tasks: Run Task → evcxr-typst: watch (rust-by-example)` starts the rbe authoring session.
 
 ## Repository layout
 
@@ -57,8 +59,13 @@ evcxr-typst/
 │   └── evcxr-typst/         # Rust CLI and library
 ├── packages/
 │   └── evcxr/               # Typst package
-└── examples/
-    └── hello/               # end-to-end smoke document
+├── examples/
+│   ├── hello/               # end-to-end smoke document
+│   ├── image/               # MIME passthrough (T-I04)
+│   ├── errors/              # pretty error rendering (T-I07)
+│   └── rust-by-example/     # incremental hand-port of upstream rust-by-example (track/rbe-incremental)
+├── journal/                 # working log of the rbe port
+└── .vscode/                 # VSCode tasks (build/watch/run/clean)
 ```
 
 ## Documents
