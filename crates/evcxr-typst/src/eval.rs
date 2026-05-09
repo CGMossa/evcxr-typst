@@ -740,6 +740,75 @@ pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), Error> {
     Ok(())
 }
 
+/// Write `_index.json` listing snippet IDs that have materialised sidecars.
+/// The Typst package reads this once to decide which snippets can be read
+/// vs. which should fall through to the placeholder (D-004, T-I06).
+pub(crate) fn write_available_index(cache_dir: &Path, available_ids: &[&str]) -> Result<(), Error> {
+    let ids_json = available_ids
+        .iter()
+        .map(|id| format!("\"{}\"", id.replace('"', "\\\"")))
+        .collect::<Vec<_>>()
+        .join(",");
+    let json = format!("{{\"v\":1,\"available\":[{ids_json}]}}");
+    write_atomically(&cache_dir.join("_index.json"), json.as_bytes())
+}
+
+/// Derive the available-id list from filesystem state and write `_index.json`.
+///
+/// Used by the watch loop where results are accumulated incrementally rather
+/// than returned as a batch. A snippet ID is "available" when its
+/// `<id>.manifest.json` exists (written by `write_mime_sidecars`).
+pub(crate) fn write_available_index_for_snippets(
+    cache_dir: &Path,
+    snippets: &[Snippet],
+) -> Result<(), Error> {
+    let available: Vec<&str> = snippets
+        .iter()
+        .filter(|s| cache_dir.join(format!("{}.manifest.json", s.id)).exists())
+        .map(|s| s.id.as_str())
+        .collect();
+    write_available_index(cache_dir, &available)
+}
+
+/// Validate materialised sidecars for snippets that are expected to have them.
+/// Returns pairs of `(snippet_id, reason)` for any malformed or missing sidecar.
+pub(crate) fn validate_sidecars(
+    snippets: &[Snippet],
+    results: &[SnippetResult],
+    cache_dir: &Path,
+) -> Vec<(String, String)> {
+    debug_assert_eq!(
+        snippets.len(),
+        results.len(),
+        "validate_sidecars: snippets/results length mismatch"
+    );
+    let mut issues = Vec::new();
+    for (snippet, result) in snippets.iter().zip(results.iter()) {
+        if result.outcome != SnippetOutcome::CacheHit {
+            continue;
+        }
+        let manifest_path = cache_dir.join(format!("{}.manifest.json", snippet.id));
+        match fs::read_to_string(&manifest_path) {
+            Err(_) => issues.push((
+                snippet.id.clone(),
+                "manifest.json missing for cache-hit snippet".to_owned(),
+            )),
+            Ok(txt) => match serde_json::from_str::<serde_json::Value>(&txt) {
+                Err(_) => issues.push((
+                    snippet.id.clone(),
+                    "manifest.json is not valid JSON".to_owned(),
+                )),
+                Ok(v) => {
+                    if v.get("v").and_then(|v| v.as_u64()) != Some(1) {
+                        issues.push((snippet.id.clone(), "manifest.json has unknown v".to_owned()));
+                    }
+                }
+            },
+        }
+    }
+    issues
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

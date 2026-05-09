@@ -258,6 +258,11 @@ fn run_one_cycle(
     }
 
     *prev = curr;
+
+    // Keep _index.json current so lib.typ can distinguish available vs.
+    // SkippedNoEval snippets on the deny-eval partial-cache path (D-004).
+    let _ = eval::write_available_index_for_snippets(cache_dir, prev);
+
     Ok(())
 }
 

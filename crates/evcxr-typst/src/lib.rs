@@ -31,7 +31,7 @@
 //! evcxr::runtime_hook();
 //!
 //! let mut project = Project::open("main.typ")?;
-//! let report = project.evaluate(&EvalOptions::allow_eval())?;
+//! let report = project.evaluate(&mut EvalOptions::allow_eval())?;
 //! for s in &report.snippets {
 //!     println!("{}: {:?}", s.id, s.outcome);
 //! }
@@ -415,6 +415,8 @@ pub struct EvaluationReport {
     pub cache_hits: usize,
     /// Snippets that re-evaluated.
     pub cache_misses: usize,
+    /// Validation issues found on the deny-eval path: `(snippet_id, reason)`.
+    pub validation_issues: Vec<(String, String)>,
 }
 
 /// A Typst document plus its discovered snippet set.
@@ -470,21 +472,41 @@ impl Project {
 
     /// Evaluate every snippet, write sidecars per the snippet-output cache
     /// (D-010), and return a structured report.
-    pub fn evaluate(&mut self, options: &EvalOptions) -> Result<EvaluationReport, Error> {
+    pub fn evaluate(&mut self, options: &mut EvalOptions) -> Result<EvaluationReport, Error> {
         let start = Instant::now();
         let cache_dir = self.cache_dir();
 
-        let (snippet_results, hits, misses) = if options.allow_eval {
-            let outcome = eval::run(&self.snippets, &cache_dir, None, options.snippet_timeout)?;
+        let (snippet_results, hits, misses, validation_issues) = if options.allow_eval {
+            // WHY: Take callbacks out into a local so eval::run can borrow them
+            // mutably. Leaving them in options.callbacks (behind &mut EvalOptions)
+            // triggers a compiler invariance error because Box<dyn EvalCallbacks>
+            // carries an implicit 'static bound and &mut references are invariant.
+            let mut cb_box: Option<Box<dyn EvalCallbacks>> = options.callbacks.take();
+            let cb: Option<&mut dyn EvalCallbacks> = match cb_box.as_mut() {
+                Some(b) => Some(b.as_mut()),
+                None => None,
+            };
+            let outcome = eval::run(&self.snippets, &cache_dir, cb, options.snippet_timeout)?;
+            options.callbacks = cb_box;
             let h = outcome.cache_hits;
             let m = outcome.cache_misses;
-            (outcome.results, h, m)
+            (outcome.results, h, m, Vec::new())
         } else {
             let outcome = eval::skip_all_with_cache(&self.snippets, &cache_dir)?;
             let h = outcome.cache_hits;
             let m = outcome.cache_misses;
-            (outcome.results, h, m)
+            let issues = eval::validate_sidecars(&self.snippets, &outcome.results, &cache_dir);
+            (outcome.results, h, m, issues)
         };
+
+        // Write _index.json listing IDs with materialised sidecars so the
+        // Typst package can guard json() calls on missing manifests (D-004).
+        let available: Vec<&str> = snippet_results
+            .iter()
+            .filter(|r| matches!(r.outcome, SnippetOutcome::Ok | SnippetOutcome::CacheHit))
+            .map(|r| r.id.as_str())
+            .collect();
+        eval::write_available_index(&cache_dir, &available)?;
 
         Ok(EvaluationReport {
             snippets: snippet_results,
@@ -492,6 +514,7 @@ impl Project {
             elapsed: start.elapsed(),
             cache_hits: hits,
             cache_misses: misses,
+            validation_issues,
         })
     }
 

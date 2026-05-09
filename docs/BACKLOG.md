@@ -221,9 +221,10 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ### T-I06 · Fallback safety + `--allow-eval`
 
-- **Status:** open
+- **Status:** done · `phase4/fallback-and-allow-eval` branch
 - **Phase:** 4
 - **Depends on:** T-I02, T-I05
+- **Resolution:** D-004 fully enforced via `_index.json` guard. `eval.rs` gains `write_available_index` (writes `{"v":1,"available":[...]}` after every evaluate call, listing only Ok/CacheHit snippet IDs) and `validate_sidecars` (checks CacheHit manifests have `v==1`). `lib.rs` wires these into `Project::evaluate` on both the deny and allow-eval paths, and adds `validation_issues: Vec<(String, String)>` to `EvaluationReport`. `cli.rs` prints an informational deny-eval summary ("N snippets: M cached, K need eval") at exit 0 rather than erroring. `packages/evcxr/lib.typ` reads `_index.json` once at import time and gates every `json()` call on `_index-available(id)` — bare `typst compile` (no sidecars) succeeds with placeholders. `packages/evcxr/fallback.typ` updated with a friendlier placeholder including the `--allow-eval` hint and the source snippet preview. Two new integration tests: `tests/fallback_safety.rs` (bare `typst compile` exits 0) and `tests/deny_eval.rs` (EvalOptions::deny returns only SkippedNoEval, no sidecars written, _index.json written). Fixed two Typst syntax bugs in `error.typ` (T-I07 artifact): `*` used as string-repeat in content mode → wrapped in `#(...)`, and `[_note: #hint_]` ambiguous `_` → `emph[note: #hint]`. All 33 tests pass; 4 smoke paths verified.
 
 ### T-I07 · Pretty error rendering
 

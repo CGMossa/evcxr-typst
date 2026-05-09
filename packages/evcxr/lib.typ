@@ -41,41 +41,48 @@
   ))<evcxr-snippet>]
 }
 
-// Phase 1 (T-I03): the CLI invokes
+// The CLI invokes:
 //   typst compile --input evcxr-mode=read --input evcxr-cache=<abs-path> ...
-// after writing sidecars; everything else (bare `typst compile`, watch's
-// pre-eval pass) leaves `evcxr-mode` unset and lands in the fallback branch
-// so a missing sidecar never aborts the build (D-004). Auto-id lookup is a
-// Phase 3 cache concern — until then, an unpinned snippet always renders
-// the placeholder even after `evcxr-typst run` has populated the cache.
+// after writing sidecars. Bare `typst compile` (no --input flags) leaves both
+// unset and every _read-* helper falls through to the placeholder (D-004).
 #let _evcxr-mode = sys.inputs.at("evcxr-mode", default: "fallback")
 #let _evcxr-cache = sys.inputs.at("evcxr-cache", default: "")
 
 // Whether sidecar reading is active.
 #let _read-mode = _evcxr-mode == "read" and _evcxr-cache != ""
 
+// Set of snippet IDs that have materialised sidecars this run (T-I06).
+// The CLI writes _index.json {"v":1,"available":[...]} after every evaluate,
+// listing only cache-hit and successfully-evaluated snippets. IDs absent from
+// this list (SkippedNoEval) fall through to the placeholder, so a mixed
+// cached/uncached run never calls json() on a missing manifest (D-004 fix).
+#let _available-ids = if _read-mode {
+  json(_evcxr-cache + "/_index.json").at("available", default: ())
+} else {
+  ()
+}
+
+#let _index-available(id) = id != none and _available-ids.contains(str(id))
+
 // Read the per-snippet manifest JSON.
-// Returns the extensions array (e.g. ("png", "txt")) or () when absent.
-// The manifest is written for every successfully evaluated snippet (T-I04),
-// so in read-mode it is always present for snippets that ran ok.
+// Returns the extensions array or () when absent / not available this run.
 #let _manifest-exts(id) = {
-  if not _read-mode or id == none { return () }
+  if not _read-mode or id == none or not _index-available(id) { return () }
   let path = _evcxr-cache + "/" + str(id) + ".manifest.json"
   json(path).at("extensions", default: ())
 }
 
-// Returns the parsed error JSON dict when the snippet has an error sidecar,
-// or none when it ran successfully.
+// Returns the parsed error JSON dict when the snippet has an error sidecar.
 #let _check-error(id) = {
-  if not _read-mode or id == none { return none }
+  if not _read-mode or id == none or not _index-available(id) { return none }
   let exts = _manifest-exts(id)
   if not exts.contains("error") { return none }
   json(_evcxr-cache + "/" + str(id) + ".error.json")
 }
 
-#let _read-stdout(kind, id) = {
-  if not _read-mode or id == none {
-    return fallback.placeholder(kind, id)
+#let _read-stdout(kind, id, src: none) = {
+  if not _read-mode or id == none or not _index-available(id) {
+    return fallback.placeholder(kind, id, src: src)
   }
   let err = _check-error(id)
   if err != none { return error.evcxr-error-box(err) }
@@ -83,9 +90,9 @@
   raw(str(bytes), block: true)
 }
 
-#let _read-display(id, prefer: none) = {
-  if not _read-mode or id == none {
-    return fallback.placeholder("rust-display", id)
+#let _read-display(id, prefer: none, src: none) = {
+  if not _read-mode or id == none or not _index-available(id) {
+    return fallback.placeholder("rust-display", id, src: src)
   }
   let err = _check-error(id)
   if err != none { return error.evcxr-error-box(err) }
@@ -101,7 +108,6 @@
   } else if prefer == "text/html" or prefer == "html" {
     ("html", "png", "svg", "jpg")
   } else {
-    // Default: raster images first, then vector, then html
     ("png", "svg", "jpg", "html")
   }
 
@@ -117,27 +123,27 @@
     }
   }
   if result == none {
-    fallback.placeholder("rust-display", id)
+    fallback.placeholder("rust-display", id, src: src)
   } else {
     result
   }
 }
 
-#let _read-html(id) = {
-  if not _read-mode or id == none {
-    return fallback.placeholder("rust-html", id)
+#let _read-html(id, src: none) = {
+  if not _read-mode or id == none or not _index-available(id) {
+    return fallback.placeholder("rust-html", id, src: src)
   }
   let err = _check-error(id)
   if err != none { return error.evcxr-error-box(err) }
   let exts = _manifest-exts(id)
   if not exts.contains("html") {
-    return fallback.placeholder("rust-html", id)
+    return fallback.placeholder("rust-html", id, src: src)
   }
   raw(str(read(_evcxr-cache + "/" + str(id) + ".html")), lang: "html")
 }
 
 #let _read-data(id, format: auto) = {
-  if not _read-mode or id == none { return none }
+  if not _read-mode or id == none or not _index-available(id) { return none }
   let err = _check-error(id)
   if err != none { return none }
   let exts = _manifest-exts(id)
@@ -177,19 +183,19 @@
     render: render, timeout: timeout, caption: caption,
   ))
   raw(_src-text(src), lang: "rust", block: true)
-  _read-stdout("rust", id)
+  _read-stdout("rust", id, src: _src-text(src))
 }
 
 #let rust-out(src, id: none, deps: (), timeout: auto) = {
   _emit-snippet("rust-out", src, id, deps, (timeout: timeout))
-  _read-stdout("rust-out", id)
+  _read-stdout("rust-out", id, src: _src-text(src))
 }
 
 #let rust-display(src, id: none, deps: (), prefer: auto, timeout: auto) = {
   _emit-snippet("rust-display", src, id, deps, (
     prefer: prefer, timeout: timeout,
   ))
-  _read-display(id, prefer: prefer)
+  _read-display(id, prefer: prefer, src: _src-text(src))
 }
 
 // rust-html renders the snippet's HTML output verbatim as a raw block.
@@ -198,7 +204,7 @@
   _emit-snippet("rust-display", src, id, deps, (
     prefer: "text/html", timeout: timeout,
   ))
-  _read-html(id)
+  _read-html(id, src: _src-text(src))
 }
 
 #let rust-hidden(src, id: none, deps: (), timeout: auto) = {
