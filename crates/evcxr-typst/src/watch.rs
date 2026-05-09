@@ -122,6 +122,35 @@ fn watch_thread(
     // D-011: track whether the previous cycle had a panic.
     let mut prev_had_panic = false;
 
+    // Fire one startup cycle immediately so _index.json is written before
+    // typst watch's first compile attempt reads it. Without this, the watch
+    // loop would wait for a notify event (e.g. a source file edit) before
+    // running the first discovery cycle.
+    match run_one_cycle(
+        &mut ctx_opt,
+        &entry,
+        &root,
+        &cache_dir,
+        &mut prev_snippets,
+        &env,
+        allow_eval,
+        &stdout_rx,
+        &stderr_rx,
+        &mut prev_had_panic,
+    ) {
+        Ok(()) => backoff.reset(),
+        Err(CycleError::QueryFailed(e)) => {
+            tracing::warn!("typst query failed on startup: {e}");
+            backoff.bump();
+        }
+        Err(CycleError::VersionTooOld { required, actual }) => {
+            eprintln!("error: this document requires evcxr-typst >= {required}; you have {actual}");
+            eprintln!("\tinstall a newer version: cargo install evcxr-typst");
+            return Ok(());
+        }
+        Err(CycleError::Fatal(e)) => return Err(e),
+    }
+
     loop {
         let timeout_dur = match last_event_at {
             Some(t) => {
@@ -697,11 +726,26 @@ fn is_relevant(event: &Event, entry: &Path, cache_dir: &Path) -> bool {
         if path.starts_with(cache_dir) {
             continue;
         }
-        if path.starts_with(entry_parent) {
+        if path.starts_with(entry_parent) && is_source_extension(path) {
             return true;
         }
     }
     false
+}
+
+/// Source-file extensions that warrant an evcxr-typst eval cycle.
+///
+/// `.typ`  — Typst source files (entry, included chapters, imports).
+/// `.toml` — typst.toml manifest (fonts, deps).
+///
+/// Output formats produced by `typst watch` (`.pdf`, `.svg`, `.html`, `.png`)
+/// are intentionally excluded so a typst re-render does not retrigger our
+/// eval loop. See issue #29.
+fn is_source_extension(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|e| e.to_str()),
+        Some("typ" | "toml")
+    )
 }
 
 fn spawn_typst_watch(
@@ -962,6 +1006,34 @@ mod tests {
                 &cache_dir
             ),
             "unrelated path should not be relevant"
+        );
+
+        // typst-watch output files — must not be relevant (issue #29).
+        assert!(
+            !is_relevant(
+                &make_event(PathBuf::from("/project/main.pdf")),
+                &entry,
+                &cache_dir
+            ),
+            ".pdf sibling should not be relevant"
+        );
+        assert!(
+            !is_relevant(
+                &make_event(PathBuf::from("/project/main.svg")),
+                &entry,
+                &cache_dir
+            ),
+            ".svg sibling should not be relevant"
+        );
+
+        // typst.toml manifest — must be relevant.
+        assert!(
+            is_relevant(
+                &make_event(PathBuf::from("/project/typst.toml")),
+                &entry,
+                &cache_dir
+            ),
+            "typst.toml should be relevant"
         );
     }
 
