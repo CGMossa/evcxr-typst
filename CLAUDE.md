@@ -27,6 +27,17 @@ If you propose a *new* evcxr-side change while working on `evcxr-typst`, the wor
 
 ## Where to start a session
 
+The main critical path (Phases 1–4, T-I01..T-I08) is **complete**. Both artifacts are at `0.1.0`. The only remaining main-track work is publishing — Typst package to Universe, CLI to crates.io — both manual external processes (see GitHub issues #17 and #18; #18 is blocked on D-006 evcxr path-dep).
+
+For new work, the choices are:
+
+- **Side tracks** (off main critical path, never block main work):
+  - Semantic Typst — rust-analyzer integration. Sub-phases T-S01..T-S04 in `docs/BACKLOG.md`; design in `docs/tracks/semantic-typst.md`; tracked as issue #19.
+  - Rust-by-example port — port the upstream book to Typst documents. Sub-phases T-B00..T-B06; design in `docs/tracks/rust-by-example-port.md`; tracked as issue #20.
+- **Optional features** — issue #9 (embed typst as a library, design-gated).
+
+Process for picking up work:
+
 1. Read `docs/BACKLOG.md` and pick the top **open** task whose dependencies are met.
 2. Read the "Reference reads" listed in that task before touching anything.
 3. Each task has a "Done when" checklist — match it, don't expand scope.
