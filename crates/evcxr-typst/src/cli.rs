@@ -131,7 +131,17 @@ pub fn run() -> Result<()> {
             let pdf = output_path(&path, "pdf");
             let svg = output_path(&path, "svg");
             typst_compile(project.root(), &path, &cache_typst_path, "pdf", &pdf)?;
-            typst_compile(project.root(), &path, &cache_typst_path, "svg", &svg)?;
+            // Multi-page documents reject a single-file SVG output; rather than
+            // bailing the whole run, downgrade SVG failure to a warning. The
+            // PDF is the user-facing artifact; SVG is the visual quick-look.
+            // For multi-page docs the user can run `typst compile` directly
+            // with a `{p}` template to get per-page SVGs.
+            if let Err(e) = typst_compile(project.root(), &path, &cache_typst_path, "svg", &svg) {
+                eprintln!(
+                    "warning: SVG render skipped ({e}). PDF at {} is unaffected.",
+                    pdf.display()
+                );
+            }
             if error_count > 0 {
                 bail!("{error_count} snippet(s) failed (see error sidecars and SVG for details)");
             }
@@ -149,6 +159,16 @@ pub fn run() -> Result<()> {
                 WatchOptions::deny()
             };
             let handle = project.watch(&opts)?;
+            // Block until Ctrl-C; only then ask the watch loop to shut down.
+            // WatchHandle::join sends the shutdown signal first, so calling it
+            // unconditionally here would exit after the first cycle.
+            let (tx, rx) = std::sync::mpsc::channel::<()>();
+            ctrlc::set_handler(move || {
+                let _ = tx.send(());
+            })
+            .map_err(|e| anyhow::anyhow!("installing Ctrl-C handler: {e}"))?;
+            eprintln!("watch running; press Ctrl-C to stop.");
+            let _ = rx.recv();
             handle.join()?;
             Ok(())
         }
