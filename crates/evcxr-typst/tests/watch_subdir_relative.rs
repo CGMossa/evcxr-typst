@@ -4,12 +4,30 @@
 //! Regression: is_relevant must match notify's absolute event paths even when
 //! the user passes a relative entry path.
 //!
+//! Two observation steps:
+//!
+//! 1. First cycle (entry-dir event): typst watch compiles main.typ and writes
+//!    main.pdf → notify fires for main.pdf (in entry_parent) → is_relevant
+//!    matches → cycle fires → _index.json is written.
+//!
+//! 2. Second cycle (subdir event): we mutate sub/chapter.typ (NOT included in
+//!    main.typ, so typst does not recompile) → notify fires for
+//!    <abs>/sub/chapter.typ → is_relevant checks path.starts_with(entry_parent):
+//!      - Patched:   entry is canonicalized → entry_parent is absolute → matches
+//!                   → cycle fires → _index.json mtime advances.
+//!      - Unpatched: entry_parent is relative → absolute subdir path never
+//!                   starts_with a relative prefix → no cycle → mtime stays
+//!                   constant → assertion fails.
+//!    This step pins the `path.starts_with(entry_parent)` code path for
+//!    subdirectory files specifically — a regression that broke subdir delivery
+//!    without breaking entry-dir delivery would be caught here.
+//!
 //! Run with `--test-threads=1`. `std::env::set_current_dir` is process-global
 //! state; this test must not run concurrently with other watch tests.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use evcxr_typst::{Project, ProjectConfig, WatchOptions};
 
@@ -32,25 +50,48 @@ fn write_file(path: &Path, content: &[u8]) {
     f.write_all(content).expect("write file");
 }
 
-/// The watch loop fires an eval cycle when a relative entry path is given.
+/// Poll `path` until its mtime differs from `before` or `deadline` elapses.
+/// Returns `true` if mtime advanced, `false` on timeout.
+fn poll_until_mtime_changes(path: &Path, before: SystemTime, deadline: Instant) -> bool {
+    loop {
+        if Instant::now() >= deadline {
+            return false;
+        }
+        if let Ok(meta) = std::fs::metadata(path) {
+            if let Ok(mtime) = meta.modified() {
+                if mtime != before {
+                    return true;
+                }
+            }
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// The watch loop fires an eval cycle when a relative entry path is given,
+/// and fires a second cycle when a file in a subdirectory is mutated.
 ///
 /// Setup:
-///   target/watch-relpath-test/main.typ — plain Typst doc with no evcxr import,
-///                                         so typst watch compiles it without
-///                                         needing `_index.json`.
-///   target/watch-relpath-test/sub/edit-me.typ — a plain sub-file we can touch
-///                                         to trigger a notify event in a subdir.
+///   target/watch-relpath-test/main.typ — plain Typst doc (no evcxr import,
+///                                         no #include of the sub-file) so
+///                                         typst watch compiles it without
+///                                         needing `_index.json` and does NOT
+///                                         recompile when sub/chapter.typ changes.
+///   target/watch-relpath-test/sub/chapter.typ — plain sub-file; mutating it
+///                                         generates a notify event for an
+///                                         absolute subdir path without causing
+///                                         typst to recompile. This isolates
+///                                         the subdir-event path from the
+///                                         entry-dir PDF-event path.
 ///
 /// The tmp dir is inside `target/` so `typst --root <repo>` resolves package
 /// imports correctly. `set_current_dir` is called so that the entry path
 /// `target/watch-relpath-test/main.typ` is genuinely relative.
 ///
-/// Observable: `_index.json` is written by every eval cycle (even when empty).
-/// On unpatched code, `is_relevant` compares notify's absolute event paths
-/// against the relative `entry_parent` — `Path::starts_with` never matches →
-/// no cycle fires → `_index.json` never appears → test times out and fails.
-/// On patched code, entry is canonicalized before use → paths match → cycle
-/// fires after the PDF write event → `_index.json` is written → test passes.
+/// Observable (step 1): `_index.json` is written by every eval cycle.
+/// Observable (step 2): `_index.json` mtime advances when the second cycle
+/// fires (run_one_cycle always calls write_available_index_for_snippets at the
+/// end, which rewrites the file unconditionally via write_atomically → rename).
 #[test]
 fn watch_fires_on_subdir_edit_relative_entry() {
     evcxr::runtime_hook();
@@ -73,13 +114,18 @@ fn watch_fires_on_subdir_edit_relative_entry() {
     let _ = std::fs::remove_dir_all(&sub_dir);
 
     // Write a plain main.typ that typst can compile without `_index.json`.
-    // No evcxr import — the file simply includes a sub-chapter for layout.
+    // Deliberately does NOT include sub/chapter.typ so that typst watch does
+    // not recompile when the sub-file is mutated. This ensures the only notify
+    // event from the sub-file mutation is for the subdir path itself, not for
+    // a PDF rewrite — isolating the path.starts_with(entry_parent) code path
+    // for subdirectory files.
     write_file(&entry_abs, b"= Relpath Regression Test\n\nPlain content.\n");
 
-    // Write a sub-file that we can later touch to fire a notify event for
-    // the subdir path (exercising the subdirectory-event path from PR #27).
+    // Write a sub-file that we can later mutate to fire a notify event for
+    // a subdirectory path, exercising the path.starts_with(entry_parent) check
+    // in is_relevant for subdir files specifically.
     let sub_file = sub_dir.join("chapter.typ");
-    write_file(&sub_file, b"Plain sub-chapter.\n");
+    write_file(&sub_file, b"Plain sub-chapter v1.\n");
 
     // Relative entry — the key difference vs watch_subdir.rs.
     let entry_rel = Path::new("target/watch-relpath-test/main.typ");
@@ -103,7 +149,7 @@ fn watch_fires_on_subdir_edit_relative_entry() {
         Ok(h) => h,
     };
 
-    // Wait for the first eval cycle to write _index.json (up to 8 s).
+    // ── Step 1: Wait for the first eval cycle to write _index.json (up to 8 s).
     //
     // Flow: typst watch compiles main.typ (succeeds — plain content, no evcxr
     // mode=read processing needed) → writes main.pdf → notify event fires for
@@ -113,25 +159,48 @@ fn watch_fires_on_subdir_edit_relative_entry() {
     //   - Patched:   entry is canonicalized   → starts_with matches → cycle fires
     //                → run_one_cycle writes _index.json (even when empty).
     let index_path = cache_dir.join("_index.json");
-    let deadline = Instant::now() + Duration::from_secs(8);
-    let appeared = loop {
-        if Instant::now() >= deadline {
-            break false;
+    let step1_deadline = Instant::now() + Duration::from_secs(8);
+    let index_mtime_after_step1 = loop {
+        if Instant::now() >= step1_deadline {
+            drop(handle);
+            panic!(
+                "_index.json was not written within 8 s (step 1); the watch cycle may not have \
+                 fired because is_relevant is comparing a relative entry_parent against \
+                 notify's absolute event paths (relative-path regression)"
+            );
         }
-        if index_path.exists() {
-            break true;
+        if let Ok(meta) = std::fs::metadata(&index_path) {
+            if let Ok(mtime) = meta.modified() {
+                break mtime;
+            }
         }
         std::thread::sleep(Duration::from_millis(100));
     };
+
+    // ── Step 2: Mutate sub/chapter.typ and wait for a second cycle (up to 5 s).
+    //
+    // sub/chapter.typ is NOT included in main.typ, so typst watch does not
+    // recompile. The only notify event is for the absolute subdir path
+    // <base>/sub/chapter.typ. On patched code, is_relevant canonicalized
+    // entry → entry_parent is <abs-base> → starts_with matches → cycle fires
+    // → _index.json mtime advances. On unpatched, entry_parent is the relative
+    // string "target/watch-relpath-test" → absolute subdir path never
+    // starts_with that prefix → no cycle → mtime stays constant → test fails.
+    write_file(&sub_file, b"Plain sub-chapter v2.\n");
+
+    let step2_deadline = Instant::now() + Duration::from_secs(5);
+    let subdir_cycle_fired =
+        poll_until_mtime_changes(&index_path, index_mtime_after_step1, step2_deadline);
 
     // Shutdown before asserting so the thread is cleaned up.
     drop(handle);
 
     assert!(
-        appeared,
-        "_index.json was not written within 8 s; the watch cycle may not have \
-         fired because is_relevant is comparing a relative entry_parent against \
-         notify's absolute event paths (relative-path regression)"
+        subdir_cycle_fired,
+        "_index.json mtime did not advance within 5 s after mutating sub/chapter.typ \
+         (step 2); the subdir notify event was not delivered to is_relevant, which \
+         means path.starts_with(entry_parent) failed for a subdirectory path — \
+         likely because entry_parent is still relative instead of canonicalized"
     );
 
     // Cleanup.
