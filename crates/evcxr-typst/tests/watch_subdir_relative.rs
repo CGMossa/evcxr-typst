@@ -6,9 +6,9 @@
 //!
 //! Two observation steps:
 //!
-//! 1. First cycle (entry-dir event): typst watch compiles main.typ and writes
-//!    main.pdf → notify fires for main.pdf (in entry_parent) → is_relevant
-//!    matches → cycle fires → _index.json is written.
+//! 1. First cycle (startup): the watch thread fires an initial discovery cycle
+//!    immediately on startup → _index.json is written without waiting for a
+//!    notify event.
 //!
 //! 2. Second cycle (subdir event): we mutate sub/chapter.typ (NOT included in
 //!    main.typ, so typst does not recompile) → notify fires for
@@ -151,22 +151,17 @@ fn watch_fires_on_subdir_edit_relative_entry() {
 
     // ── Step 1: Wait for the first eval cycle to write _index.json (up to 8 s).
     //
-    // Flow: typst watch compiles main.typ (succeeds — plain content, no evcxr
-    // mode=read processing needed) → writes main.pdf → notify event fires for
-    // main.pdf (absolute path) → is_relevant checks whether it starts_with
-    // entry_parent:
-    //   - Unpatched: entry_parent is relative → starts_with fails → no cycle.
-    //   - Patched:   entry is canonicalized   → starts_with matches → cycle fires
-    //                → run_one_cycle writes _index.json (even when empty).
+    // The watch thread fires an initial startup cycle immediately, which writes
+    // _index.json without waiting for a notify event. This step just waits for
+    // that write to land so we have a baseline mtime for step 2.
     let index_path = cache_dir.join("_index.json");
     let step1_deadline = Instant::now() + Duration::from_secs(8);
     let index_mtime_after_step1 = loop {
         if Instant::now() >= step1_deadline {
             drop(handle);
             panic!(
-                "_index.json was not written within 8 s (step 1); the watch cycle may not have \
-                 fired because is_relevant is comparing a relative entry_parent against \
-                 notify's absolute event paths (relative-path regression)"
+                "_index.json was not written within 8 s (step 1); the startup cycle \
+                 may not have completed"
             );
         }
         if let Ok(meta) = std::fs::metadata(&index_path) {
