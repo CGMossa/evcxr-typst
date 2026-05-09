@@ -1,19 +1,52 @@
 # evcxr-typst
 
-Integration glue between [evcxr](https://github.com/evcxr/evcxr) (a Rust evaluation context — REPL + Jupyter kernel) and [Typst](https://typst.app/).
-
-**Goal:** Rust snippets in a Typst document compile and their output (text, images, HTML, structured data) is embedded in the rendered PDF. Edits feel "live": evcxr keeps a long-running session so per-snippet incremental compilation is fast, and Typst's own incremental rendering picks up sidecar artifacts as they change.
+Integration glue between [evcxr](https://github.com/evcxr/evcxr) (a Rust evaluation context — REPL + Jupyter kernel) and [Typst](https://typst.app/). Rust snippets in a `.typ` document are evaluated and their output (text, images, structured data) is embedded in the rendered PDF. A watch mode keeps a live evcxr session open so edits re-evaluate in seconds.
 
 ## Status
 
-Phase 0 design is complete (architecture, decisions, snippet semantics, error model, cache, watch-loop, multi-file projects, schema versioning — see [`docs/design/`](docs/design/)). Phase 1 scaffolding has shipped: a Rust CLI skeleton (`crates/evcxr-typst/`), a Typst package skeleton (`packages/evcxr/`), and a hello-world example. The next actionable task is **T-L01** — splitting the CLI scaffold into a public `lib.rs` + thin `main.rs` per [D-023](docs/DECISIONS.md#d-023). T-I03 (end-to-end smoke test) follows once the library surface exists. See [`docs/BACKLOG.md`](docs/BACKLOG.md).
+Not yet published. The Universe package and crates.io publish are the remaining open work in Phase 4 (T-I08 in progress — see [`docs/PLAN.md`](docs/PLAN.md)). The library and CLI are functional for local use.
 
 ## Quick start
 
 ```sh
-cargo build -p evcxr-typst
-cargo run -p evcxr-typst -- --help    # prints "scaffolding only" and exits 2
+# Install the CLI (not yet on crates.io — build from source for now)
+cargo install --path crates/evcxr-typst
+
+# In your document (not yet on Universe — use a local import for now):
+#import "packages/evcxr/lib.typ" as evcxr
+#evcxr.setup()
+#evcxr.rust(```rust println!("hello"); ```)
+
+# Run once (evaluates snippets, then compiles PDF + SVG):
+evcxr-typst run --allow-eval --root . main.typ
+
+# Bare compile (safe — renders placeholder boxes without evaluating Rust):
+typst compile --root . main.typ
 ```
+
+## How it works
+
+1. `typst query` extracts `<evcxr-snippet>` metadata markers from the document in order.
+2. A long-lived `evcxr::CommandContext` drives snippets sequentially, capturing stdout and MIME display objects; output is written to sidecars under `.evcxr-typst-cache/`.
+3. `typst compile` reads the sidecars at render time and embeds output; the Typst package renders placeholder boxes for any snippet not yet evaluated.
+
+## Subcommands
+
+| Subcommand | What it does |
+|---|---|
+| `evcxr-typst run [--allow-eval] [--root <dir>] <file>` | One-shot: discover, evaluate (if `--allow-eval`), compile PDF + SVG. |
+| `evcxr-typst watch [--allow-eval] [--root <dir>] <file>` | Watch mode: keep one evcxr session alive, re-eval on file change, drive `typst watch`. |
+| `evcxr-typst clean [--gc] [--root <dir>] <file>` | Drop sidecar view for a document; `--gc` also evicts unreferenced CAS entries. |
+
+Run `evcxr-typst --help` or `evcxr-typst <subcommand> --help` for full flag documentation.
+
+## Safety and `--allow-eval`
+
+The CLI refuses to execute Rust snippets unless `--allow-eval` is passed explicitly. Bare `typst compile` of a document that uses this package is always safe: the package renders placeholder boxes when sidecars are absent. See [`docs/DECISIONS.md`](docs/DECISIONS.md) D-004.
+
+## Caching and watch mode
+
+Snippet output is cached by a Blake3 content-addressed store under `.evcxr-typst-cache/`. Unchanged snippets are skipped on re-run; edited snippets re-evaluate from the first changed snippet forward (evcxr's state is forward-only). Watch mode hooks into `notify` and drives `typst watch` as a child process. See [`docs/design/cache.md`](docs/design/cache.md) and [`docs/design/watch-loop.md`](docs/design/watch-loop.md).
 
 ## Repository layout
 
@@ -21,24 +54,18 @@ cargo run -p evcxr-typst -- --help    # prints "scaffolding only" and exits 2
 evcxr-typst/
 ├── docs/                    # plans, architecture, decisions, backlog
 ├── crates/
-│   └── evcxr-typst/         # Rust CLI (Phase 1 scaffolding)
+│   └── evcxr-typst/         # Rust CLI and library
 ├── packages/
-│   └── evcxr/               # Typst package (Phase 1 scaffolding)
+│   └── evcxr/               # Typst package
 └── examples/
     └── hello/               # end-to-end smoke document
 ```
 
-## How this repo relates to evcxr
-
-The [evcxr](https://github.com/evcxr/evcxr) source is treated as a **read-only reference workspace**. We depend on its `evcxr` crate via path-dep during development (per [D-006](docs/DECISIONS.md)) and will switch to crates.io for releases. We do **not** vendor or fork it. Patches that need to land in evcxr proper are sent upstream.
-
-Future Claude Code sessions: see [`CLAUDE.md`](CLAUDE.md).
-
 ## Documents
 
-- [`docs/PLAN.md`](docs/PLAN.md) — phased roadmap.
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — design rationale, MIME mapping, watch loop, why-not-WASM.
-- [`docs/BACKLOG.md`](docs/BACKLOG.md) — agent-ready task queue. Pick the top open task and run.
+- [`docs/PLAN.md`](docs/PLAN.md) — phased roadmap and current status.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — design rationale, pipeline, MIME mapping, watch loop, why-not-WASM.
+- [`docs/BACKLOG.md`](docs/BACKLOG.md) — agent-ready task queue.
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) — ADR-lite log of design decisions.
 
 ## License

@@ -108,11 +108,11 @@ Stdout that is *not* wrapped in BEGIN/END is the snippet's plain text output. A 
 Two layers, both essential, both already partly built elsewhere:
 
 1. **rustc artifact cache** — evcxr already has this (`:cache <MB>` directive). We turn it on by default with a sane budget. This is what makes "edit one snippet" cheap — the dep crates are already compiled.
-2. **Snippet output cache** — ours to build. Cache key hashes snippet src + a Merkle chain over prior snippets + active deps + evcxr/rustc/target/env. Storage uses content-addressed CAS at `.evcxr-typst-cache/v1/cas/<XX>/<full-key>/` with a separate id-addressed view (hardlinks) that the Typst package reads at render time. The package never sees the CAS. CAS-by-key gives us free dedup across documents and easy GC. Detail and exact formula in `docs/design/cache.md`; locked in by D-010.
+2. **Snippet output cache** — implemented (T-I05). Cache key hashes snippet src + a Merkle chain over prior snippets + active deps + evcxr/rustc/target/env. Storage uses content-addressed CAS at `.evcxr-typst-cache/v1/cas/<XX>/<full-key>/` with a separate id-addressed view (hardlinks) that the Typst package reads at render time. The package never sees the CAS. CAS-by-key gives us free dedup across documents and easy GC. Detail and exact formula in `docs/design/cache.md`; locked in by D-010.
 
 ## Watch loop
 
-Long-lived `CommandContext`. Watch the `.typ` file with `notify`. On change:
+A long-lived `CommandContext` is kept open. `notify` watches the `.typ` file with a 150 ms trailing-edge debounce. On change:
 
 1. Re-query snippets. Diff against the previous list (id + src).
 2. Classify each diff:
@@ -132,9 +132,9 @@ The "just reset on middle-edit" choice is honest and simple. Snapshot/restore in
 
 `typst compile main.typ` of a document that uses our package, **without** running our CLI, must be safe and must produce sensible output (placeholder boxes where evaluated output would go), in whichever format the user requests. Concretely:
 
-- The Typst package detects missing sidecar files and renders a placeholder.
-- The CLI requires `--allow-eval` to actually execute Rust. Otherwise it does query + sidecar-validity-check only.
-- The package never invokes Rust. All execution is gated by the CLI being explicitly run.
+- The Typst package reads `_index.json` (written by the CLI after every evaluate call) and gates all sidecar reads on whether a snippet's id appears in its `available` list. Snippets absent from the list — or when `_index.json` is entirely missing (bare `typst compile`) — get a placeholder box instead of a hard error.
+- The CLI requires `--allow-eval` to actually execute Rust. Without it, the CLI writes `_index.json` reflecting cached snippets only and exits 0 with an informational summary.
+- The package never invokes Rust. All execution is gated by the CLI being explicitly run with `--allow-eval`.
 
 This is the same safety model as upstream `prequery`. See D-004.
 
@@ -144,17 +144,22 @@ This is the same safety model as upstream `prequery`. See D-004.
 crates/evcxr-typst/
   src/
     main.rs              # CLI entry, calls evcxr::runtime_hook() FIRST (mandatory)
-    cli.rs               # clap config: run, watch, clean, query
-    discover.rs          # shells out to `typst query`, parses snippet JSON
-    session.rs           # owns CommandContext, drives snippets, captures output
-    sidecar.rs           # MIME → file mapping, atomic writes
-    cache.rs             # snippet-output cache
-    watch.rs             # notify + change classification + typst watch wrapper
+    lib.rs               # public library API: Project, EvalOptions, EvalCallbacks, …
+    cli.rs               # clap config: run, watch, clean (binary-only, lib is clap-free)
+    discovery.rs         # shells out to `typst query`, parses snippet + dep JSON
+    eval.rs              # drives CommandContext, writes MIME sidecars, CAS store, _index.json
+    identity.rs          # Blake3 → base32 12-char IDs, collision suffix
+    cache.rs             # Blake3 CAS, Merkle chain, hardlink/copy materialisation, GC
+    watch.rs             # notify + debounce + change classification + typst watch wrapper
+    error_capture.rs     # ErrorSidecar, classify_*, OffsetMap, write_error_sidecar
+    version_check.rs     # semver tuple comparison, IncompatibleCliVersion (D-019, D-026)
 packages/evcxr/
   typst.toml             # package manifest
-  lib.typ                # rust(), rust-out(), rust-display(), dep(), …
+  lib.typ                # rust(), rust-out(), rust-display(), rust-hidden(), rust-data(), dep(), setup()
   fallback.typ           # placeholder rendering when sidecars are missing
+  error.typ              # styled error boxes (compile / panic / dep / timeout)
 examples/
-  hello/                 # the Phase 1 smoke test
-  gallery/               # showcase docs (one per scenario)
+  hello/                 # Phase 1 smoke test (three cross-snippet snippets)
+  image/                 # Phase 2: PNG plot + CBOR roundtrip
+  errors/                # Phase 4: compile error, panic, dep failure
 ```
