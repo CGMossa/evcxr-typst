@@ -58,9 +58,9 @@ The "interactive / progressive" part.
 - Fallback rendering: when `--input evcxr-fallback=true` is passed (or the sidecar is missing), the Typst package renders a placeholder box instead of erroring. This is what makes a document safe to compile with bare `typst compile` even though it embeds executable Rust. ✓ done — see BACKLOG T-I06
 - `--allow-eval` flag on the CLI is required to run snippets; otherwise `evcxr-typst run` refuses with a clear error pointing at this safety guarantee. ✓ done — see BACKLOG T-I06
 - Pretty error reporting: forward evcxr compilation errors (with source spans) into a sidecar that the Typst package surfaces as a styled error box with the offending snippet highlighted. ✓ done — see BACKLOG T-I07
-- Publish: Typst package goes to Universe; CLI goes to crates.io. Decide on versioning policy and minimum compatible CLI version (the package should error helpfully if the CLI is too old). **In progress — T-I08 (min-cli enforcement + 0.1.0 versioning policy) is in PR on `phase4/min-cli-and-version-policy`. Universe + crates.io publish is the remaining open work.**
+- Publish: Typst package goes to Universe; CLI goes to crates.io. Decide on versioning policy and minimum compatible CLI version (the package should error helpfully if the CLI is too old). ✓ Versioning + min-cli enforcement done (T-I08, D-026); both artifacts at `0.1.0`. Universe + crates.io publish is the remaining open work.
 
-**Done when:** a user can `typst compile` a document by another author safely (placeholder boxes), then opt into evaluation with `evcxr-typst run --allow-eval`, and get nice errors when their snippet doesn't compile. ✓ Safety + errors done (T-I06, T-I07). Publish pending (T-I08).
+**Done when:** a user can `typst compile` a document by another author safely (placeholder boxes), then opt into evaluation with `evcxr-typst run --allow-eval`, and get nice errors when their snippet doesn't compile. ✓ Safety + errors + version-policy done (T-I06, T-I07, T-I08). Publish to Universe + crates.io pending.
 
 ## Phase 5 (optional / later) — Editor story
 

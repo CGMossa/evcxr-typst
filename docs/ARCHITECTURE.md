@@ -152,6 +152,7 @@ crates/evcxr-typst/
     cache.rs             # Blake3 CAS, Merkle chain, hardlink/copy materialisation, GC
     watch.rs             # notify + debounce + change classification + typst watch wrapper
     error_capture.rs     # ErrorSidecar, classify_*, OffsetMap, write_error_sidecar
+    version_check.rs     # semver tuple comparison, IncompatibleCliVersion (D-019, D-026)
 packages/evcxr/
   typst.toml             # package manifest
   lib.typ                # rust(), rust-out(), rust-display(), rust-hidden(), rust-data(), dep(), setup()
