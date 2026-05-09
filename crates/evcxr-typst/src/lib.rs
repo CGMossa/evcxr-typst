@@ -582,7 +582,10 @@ impl Project {
             std::fs::create_dir_all(&cache)?;
             std::fs::canonicalize(&cache)
         })?;
-        let abs_root = std::fs::canonicalize(&self.root)?;
+        let abs_root = std::fs::canonicalize(&self.root).or_else(|_| {
+            std::fs::create_dir_all(&self.root)?;
+            std::fs::canonicalize(&self.root)
+        })?;
         let rel = abs_cache.strip_prefix(&abs_root).map_err(|_| {
             Error::Discovery(format!(
                 "cache dir {} is not inside project root {}",
@@ -594,5 +597,32 @@ impl Project {
             .to_str()
             .ok_or_else(|| Error::Discovery(format!("non-UTF-8 cache path: {}", rel.display())))?;
         Ok(format!("/{}", rel_str.replace('\\', "/")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cache_dir_typst_path_creates_missing_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("nonexistent-root");
+        // root does not exist yet
+        assert!(!root.exists());
+
+        let entry = root.join("main.typ");
+        let project = Project {
+            entry: entry.clone(),
+            root: root.clone(),
+            config: ProjectConfig::new(),
+            snippets: Vec::new(),
+        };
+
+        let result = project.cache_dir_typst_path();
+        assert!(result.is_ok(), "expected Ok, got {:?}", result);
+        assert!(root.exists(), "root should have been created");
+        let path = result.unwrap();
+        assert!(path.starts_with('/'), "Typst path must start with /");
     }
 }
