@@ -108,7 +108,7 @@ fn watch_thread(
         .watch(&entry, RecursiveMode::NonRecursive)
         .map_err(|e| Error::Evcxr(format!("watch {}: {e}", entry.display())))?;
     if let Some(parent) = entry.parent().filter(|p| p != &Path::new("")) {
-        let _ = watcher.watch(parent, RecursiveMode::NonRecursive);
+        let _ = watcher.watch(parent, RecursiveMode::Recursive);
     }
 
     let env = CacheEnv::collect(&[]);
@@ -685,12 +685,15 @@ fn cache_dir_for(entry: &Path) -> PathBuf {
 }
 
 fn is_relevant(event: &Event, entry: &Path, cache_dir: &Path) -> bool {
-    // Ignore events from the cache dir (our own sidecar writes).
+    let entry_parent = match entry.parent().filter(|p| !p.as_os_str().is_empty()) {
+        Some(p) => p,
+        None => return false,
+    };
     for path in &event.paths {
         if path.starts_with(cache_dir) {
-            return false;
+            continue;
         }
-        if path == entry || path.parent() == entry.parent() {
+        if path.starts_with(entry_parent) {
             return true;
         }
     }
@@ -885,6 +888,77 @@ mod tests {
             let got = is_leaf(&s);
             assert_eq!(got, *expected, "src={src:?} expected={expected} got={got}");
         }
+    }
+
+    /// `is_relevant` accepts paths in subdirectories of the entry's parent.
+    ///
+    /// Regression test: before the fix, only paths whose direct parent equalled
+    /// `entry.parent()` were accepted.  Files in subdirs (e.g. `sub/chapter.typ`)
+    /// were rejected and the watch loop never fired for them.
+    #[test]
+    fn is_relevant_accepts_subdir_path() {
+        use notify::EventKind;
+
+        let entry = PathBuf::from("/project/main.typ");
+        let cache_dir = PathBuf::from("/project/.evcxr-typst-cache");
+
+        let make_event = |path: PathBuf| Event {
+            kind: EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Content,
+            )),
+            paths: vec![path],
+            attrs: Default::default(),
+        };
+
+        // Direct sibling — must be relevant.
+        assert!(
+            is_relevant(
+                &make_event(PathBuf::from("/project/other.typ")),
+                &entry,
+                &cache_dir
+            ),
+            "sibling file should be relevant"
+        );
+
+        // File in a subdirectory — must be relevant after the fix.
+        assert!(
+            is_relevant(
+                &make_event(PathBuf::from("/project/sub/chapter.typ")),
+                &entry,
+                &cache_dir
+            ),
+            "subdir file should be relevant"
+        );
+
+        // Deeper nesting — must also be relevant.
+        assert!(
+            is_relevant(
+                &make_event(PathBuf::from("/project/a/b/c.typ")),
+                &entry,
+                &cache_dir
+            ),
+            "deeply nested file should be relevant"
+        );
+
+        // Cache dir file — must not be relevant.
+        assert!(
+            !is_relevant(
+                &make_event(PathBuf::from("/project/.evcxr-typst-cache/foo.txt")),
+                &entry,
+                &cache_dir
+            ),
+            "cache dir file should not be relevant"
+        );
+
+        // Completely unrelated path — not relevant.
+        assert!(
+            !is_relevant(
+                &make_event(PathBuf::from("/other-project/main.typ")),
+                &entry,
+                &cache_dir
+            ),
+            "unrelated path should not be relevant"
+        );
     }
 
     /// Dropping a `WatchHandle` must not panic and must join the thread.
