@@ -20,6 +20,7 @@ Parsed into HTML library documentation:
 - `///` generates docs for the item that follows it.
 - `//!` generates docs for the enclosing item (typically used at the top of a file or module).
 
+
 The upstream chapter wraps the snippet below in `fn main() { ... }`. We drop the wrapper for the same reason as the hello chapter — evcxr executes top-level statements directly. See `journal/2026-05-09-001-hello.md` for the convention.
 
 #evcxr.rust(id: "rbe-hello-comment", ```rust
