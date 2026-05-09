@@ -400,16 +400,29 @@ pub(crate) fn run(
 
         let mut mime_sidecars = Vec::new();
         if matches!(outcome, SnippetOutcome::Ok) {
-            let written = write_mime_sidecars(cache_dir, &snippet.id, &mime_map, &stdout)?;
-            for path in &written {
-                if let Some(cb) = cb_holder.as_deref_mut() {
-                    cb.on_sidecar_written(snippet, path);
+            // Treat sidecar-write failure the same way as the panic/stdout-write
+            // block below: warn and continue. Propagating with `?` here would
+            // lose any sidecars already on disk for prior snippets and skip
+            // _index.json, breaking the entire run on a transient I/O error.
+            match write_mime_sidecars(cache_dir, &snippet.id, &mime_map, &stdout) {
+                Ok(written) => {
+                    for path in &written {
+                        if let Some(cb) = cb_holder.as_deref_mut() {
+                            cb.on_sidecar_written(snippet, path);
+                        }
+                    }
+                    mime_sidecars = written;
+                    let _ = cache::store(cache_dir, &cache_key, &snippet.id);
+                    index.insert(snippet.id.clone(), cache_key.clone());
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        id = %snippet.id,
+                        error = %e,
+                        "sidecar write failed; snippet absent from _index.json",
+                    );
                 }
             }
-            mime_sidecars = written;
-            // Store the evaluated output in the CAS.
-            let _ = cache::store(cache_dir, &cache_key, &snippet.id);
-            index.insert(snippet.id.clone(), cache_key.clone());
             cache_misses += 1;
         } else if matches!(
             outcome,
