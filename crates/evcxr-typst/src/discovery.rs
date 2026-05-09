@@ -166,10 +166,7 @@ fn query_min_cli(entry: &Path, root: &Path) -> Result<Option<String>, Error> {
     let mut best: Option<String> = None;
     for v in values {
         if let Some(s) = v.as_str() {
-            // Take the lexicographically later semver string as the higher
-            // requirement. For well-formed semver this is equivalent to a
-            // numeric comparison — and if parsing fails we still get something
-            // rather than nothing.
+            // Compare numerically; if parsing fails, keep the previous best.
             let s = s.trim().to_owned();
             best = Some(match best.take() {
                 None => s,

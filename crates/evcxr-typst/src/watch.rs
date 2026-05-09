@@ -159,6 +159,15 @@ fn watch_thread(
                             tracing::warn!("typst query failed: {e}");
                             backoff.bump();
                         }
+                        Err(CycleError::VersionTooOld { required, actual }) => {
+                            // The document now requires a newer CLI; retrying
+                            // won't help — tell the user and stop the loop.
+                            eprintln!(
+                                "error: this document requires evcxr-typst >= {required}; you have {actual}"
+                            );
+                            eprintln!("\tinstall a newer version: cargo install evcxr-typst");
+                            break;
+                        }
                         Err(CycleError::Fatal(e)) => return Err(e),
                     }
                 }
@@ -194,9 +203,7 @@ fn run_one_cycle(
     // Re-check min-cli on each cycle: the document may have been edited to
     // raise its requirement while the watch loop is running.
     if let Err((required, actual)) = crate::version_check::check(discovery.min_cli.as_deref()) {
-        return Err(CycleError::QueryFailed(format!(
-            "this document requires evcxr-typst >= {required}; you have {actual}"
-        )));
+        return Err(CycleError::VersionTooOld { required, actual });
     }
 
     let curr = discovery.snippets;
@@ -726,6 +733,7 @@ fn spawn_typst_watch(
 
 enum CycleError {
     QueryFailed(String),
+    VersionTooOld { required: String, actual: String },
     Fatal(Error),
 }
 
