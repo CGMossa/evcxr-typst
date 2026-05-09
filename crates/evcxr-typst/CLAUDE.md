@@ -4,16 +4,25 @@ Both the Rust CLI (`evcxr-typst` binary; three subcommands `run`, `watch`, `clea
 
 ```
 src/
-  lib.rs   — public API surface (Project, EvalOptions, EvalCallbacks, …)
-  main.rs  — 9-line binary entry: runtime_hook() then cli::run()
-  cli.rs   — binary-only clap layer; library never sees clap
+  lib.rs            — public API surface (Project, EvalOptions, EvalCallbacks, …)
+  main.rs           — 9-line binary entry: runtime_hook() then cli::run()
+  cli.rs            — binary-only clap layer; library never sees clap
+  discovery.rs      — typst query → snippet/dep list, ID resolution
+  eval.rs           — EvalContext driving, sidecar writing, MIME passthrough, error capture wiring
+  identity.rs       — Blake3 → base32 snippet ID, occurrence-index collision suffix
+  cache.rs          — Blake3 CAS, Merkle chain, hardlink/copy materialisation, GC
+  watch.rs          — notify + debounce, change classification, Plan enum, run_one_cycle
+  error_capture.rs  — ErrorSidecar, ErrorEntry, SpanRef, OffsetMap, classify_* constructors
+  version_check.rs  — semver tuple comparison, IncompatibleCliVersion enforcement (D-019, D-026)
 examples/
-  library_use.rs — canonical embedder; mirrors evcxr's example_eval.rs
+  library_use.rs    — canonical embedder; mirrors evcxr's example_eval.rs
 ```
 
 ## Status
 
-API surface landed (T-L01). Method bodies still stub to `Err(Error::NotImplemented(<method>))`. Real eval logic lands in **T-I03** onward; subsequent tasks must populate the library entry points (`Project::evaluate`, `Project::watch`, `Project::clean_view`) and keep `main.rs` / `cli.rs` thin — every code path goes through the library API.
+Phases 1–4 complete (T-I03 through T-I08). All library entry points (`Project::evaluate`, `Project::watch`, `Project::clean_view`) are fully implemented. `main.rs` / `cli.rs` remain thin — every code path goes through the library API. Both artifacts are at `0.1.0` (D-026).
+
+Remaining main-track work is publishing: Typst package to Universe, CLI to crates.io (blocked on switching the evcxr path-dep to a published version per D-006).
 
 ## Critical invariants
 
