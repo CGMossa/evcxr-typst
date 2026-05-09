@@ -428,3 +428,28 @@ Open fork PRs (CGMossa/evcxr#1..#9), each on a dedicated branch:
 - We do **not** vendor or fork evcxr in this repo (D-002 still holds). The fork is a staging ground, not a substitute upstream.
 
 **Reference:** D-002 (separate repo, evcxr is a dependency); D-006 (path during dev, crates.io for release); evcxr's CLAUDE.md "read-only reference workspace" framing; conversation-derived memory at `~/.claude/projects/-Users-elea-Documents-GitHub-evcxr/memory/feedback_iterate_on_fork_first.md`.
+
+---
+
+## D-026 — Artifact versioning policy: independent semver per artifact, `min-cli` couples them
+
+**Status:** accepted · 2026-05-09
+
+The CLI (`evcxr-typst` on crates.io) and the package (`@preview/evcxr` on Universe) version independently. Both start at `0.1.0`.
+
+**Rules**
+
+1. Each artifact bumps under standard semver. Pre-1.0, breaking changes may land in minor bumps.
+2. When the package's metadata contract grows a field or kind that older CLIs can't honor, the package release MUST raise its declared `setup(min-cli: ...)` to the CLI version that implements it. This is the only coupling between the two semvers.
+3. The CLI-side `min-cli` check (D-019) enforces this: too-old CLIs exit 2 with a clear message. Too-old packages can't refuse a new CLI — the CLI is forward-compatible by D-019's "ignore unknown options keys" rule.
+4. The schema `v` fields inside metadata and sidecars (D-019) bump only on breaking shape changes — orthogonal to artifact semver.
+
+**Why not lockstep?**
+
+A bug fix in the CLI (e.g. a CAS race) shouldn't force a Universe republish. A doc-string fix in the package shouldn't force a CLI release. Independent versions match the actual change cadence; `min-cli` covers the only case where the two are forced to coordinate.
+
+**Why 0.1.0 (not 0.0.x or 1.0.0)?**
+
+`0.0.x` reads as scaffolding; we have a working end-to-end product (Phases 1–4 shipped). `1.0.0` is a stability commitment we don't want to make until at least one external user has shipped a doc and we've absorbed the friction. `0.1.0` is the standard "v0, but real" point.
+
+**Reference:** D-019 (min-cli mechanism); `docs/design/schema-versioning.md` § 1 (artifact version table, updated to show `0.1.0`); T-I08 (the task that bumped both artifacts to `0.1.0` and wired the enforcement).

@@ -3,9 +3,10 @@
 
 //! Snippet discovery via `typst query`.
 //!
-//! Runs two `typst query` calls — one for `<evcxr-snippet>`, one for
-//! `<evcxr-dep>` — and merges the results by `doc_order`. The merged
-//! list is the global evaluation order for a single entry file.
+//! Runs three `typst query` calls — one for `<evcxr-snippet>`, one for
+//! `<evcxr-dep>`, and one for `<evcxr-min-cli>` — and merges the snippet
+//! and dep results by `doc_order`. The `<evcxr-min-cli>` value is returned
+//! separately so callers can enforce it before evaluation begins (D-019).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -43,7 +44,16 @@ pub(crate) struct ItemLoc {
     pub doc_order: usize,
 }
 
-pub(crate) fn discover(entry: &Path, root: &Path) -> Result<Vec<Snippet>, Error> {
+/// Result of the discovery pass: the ordered snippet list plus the optional
+/// `min-cli` string declared by the document's `setup()` call (D-019).
+pub(crate) struct DiscoveryResult {
+    pub snippets: Vec<Snippet>,
+    /// Highest `min-cli` requirement found across all `<evcxr-min-cli>`
+    /// markers. `None` when the document has no `setup(min-cli: ...)`.
+    pub min_cli: Option<String>,
+}
+
+pub(crate) fn discover(entry: &Path, root: &Path) -> Result<DiscoveryResult, Error> {
     tracing::debug!(entry = %entry.display(), root = %root.display(), "discover");
 
     let snippet_bytes = run_typst_query(entry, root, "<evcxr-snippet>")?;
@@ -54,6 +64,9 @@ pub(crate) fn discover(entry: &Path, root: &Path) -> Result<Vec<Snippet>, Error>
 
     let dep_bytes = run_typst_query_optional(entry, root, "<evcxr-dep>")?;
     tracing::debug!(bytes = dep_bytes.len(), "typst query <evcxr-dep> returned");
+
+    let min_cli = query_min_cli(entry, root)?;
+    tracing::debug!(min_cli = ?min_cli, "typst query <evcxr-min-cli> returned");
 
     let raws: Vec<RawSnippet> = serde_json::from_slice(&snippet_bytes).map_err(|e| {
         Error::Discovery(format!(
@@ -134,7 +147,59 @@ pub(crate) fn discover(entry: &Path, root: &Path) -> Result<Vec<Snippet>, Error>
     // Sort by doc_order so the eval loop sees everything in document order.
     snippets.sort_by_key(|s| s.doc_order);
 
-    Ok(snippets)
+    Ok(DiscoveryResult { snippets, min_cli })
+}
+
+/// Query `<evcxr-min-cli>` and return the highest requirement found.
+///
+/// The package emits `[#metadata("X.Y.Z")<evcxr-min-cli>]` when `setup()`
+/// is called with `min-cli:`. Multiple nested imports may each emit one;
+/// we take the highest so more-demanding transitive requirements win.
+fn query_min_cli(entry: &Path, root: &Path) -> Result<Option<String>, Error> {
+    let raw = run_typst_query_optional(entry, root, "<evcxr-min-cli>")?;
+    if raw == b"[]" || raw.is_empty() {
+        return Ok(None);
+    }
+    // The query returns a JSON array of the metadata values. Each value is a
+    // plain string (e.g. ["0.1.0"]).
+    let values: Vec<serde_json::Value> = serde_json::from_slice(&raw).unwrap_or_default();
+    let mut best: Option<String> = None;
+    for v in values {
+        if let Some(s) = v.as_str() {
+            // Compare numerically; if parsing fails, keep the previous best.
+            let s = s.trim().to_owned();
+            best = Some(match best.take() {
+                None => s,
+                Some(prev) => {
+                    // Compare numerically when both parse; otherwise keep prev.
+                    if is_version_higher(&s, &prev) {
+                        s
+                    } else {
+                        prev
+                    }
+                }
+            });
+        }
+    }
+    Ok(best)
+}
+
+/// Returns true when `candidate` is numerically higher than `baseline`.
+fn is_version_higher(candidate: &str, baseline: &str) -> bool {
+    fn parse(s: &str) -> Option<(u64, u64, u64)> {
+        let s = s.trim().trim_start_matches('v');
+        let core = s.split(['-', '+']).next().unwrap_or(s);
+        let mut p = core.splitn(3, '.');
+        let major = p.next()?.parse::<u64>().ok()?;
+        let minor = p.next()?.parse::<u64>().ok()?;
+        let patch = p.next().unwrap_or("0").parse::<u64>().ok()?;
+        Some((major, minor, patch))
+    }
+
+    match (parse(candidate), parse(baseline)) {
+        (Some(c), Some(b)) => c > b,
+        _ => false,
+    }
 }
 
 fn run_typst_query(entry: &Path, root: &Path, selector: &str) -> Result<Vec<u8>, Error> {
