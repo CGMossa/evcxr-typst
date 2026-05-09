@@ -9,7 +9,7 @@ Each track is one self-contained markdown file in this directory. Each declares 
 | Track | File | One-liner | Status |
 |---|---|---|---|
 | Semantic Typst (rust-analyzer integration) | [`semantic-typst.md`](semantic-typst.md) | Surface type names, signatures, docs, and diagnostics from rust-analyzer into `.typ` documents — literate programming with semantic awareness. | designed; tasks T-S01..T-S04 in `docs/BACKLOG.md` |
-| Rust-by-example port | [`rust-by-example-port.md`](rust-by-example-port.md) | Port the upstream rust-by-example book (~198 chapters, dual MIT/Apache-2.0) to Typst documents in `examples/rust-by-example/`, evaluated end-to-end. The flagship "real Rust at scale" demonstration. | designed; phased B0..B6; tasks T-B00..T-B06 in `docs/BACKLOG.md` |
+| Rust-by-example port | [`rust-by-example-port.md`](rust-by-example-port.md) | Port the upstream rust-by-example book (~198 chapters, dual MIT/Apache-2.0) to Typst documents in `examples/rust-by-example/`, evaluated end-to-end. The flagship "real Rust at scale" demonstration. | active hand-port on `track/rbe-incremental` (chapters `hello`, `hello/comment` landed); mechanical porter T-B00..T-B06 designed but not started. See `examples/rust-by-example/CLAUDE.md` and `journal/`. |
 
 ## Why a side-track concept
 
