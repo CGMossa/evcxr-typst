@@ -51,15 +51,16 @@ fn deny_eval_produces_skipped_no_eval() {
     }
 
     let report = project
-        .evaluate(&EvalOptions::deny())
+        .evaluate(&mut EvalOptions::deny())
         .expect("evaluate with deny");
 
-    // On a fresh cache all evaluable snippets must be SkippedNoEval.
+    // On a fresh cache all evaluable snippets must be SkippedNoEval;
+    // non-evaluable snippets (e.g. setup) produce Ok but are not evaluable.
     for result in &report.snippets {
         assert!(
             matches!(
                 result.outcome,
-                SnippetOutcome::SkippedNoEval | SnippetOutcome::Ok
+                SnippetOutcome::SkippedNoEval | SnippetOutcome::CacheHit
             ),
             "unexpected outcome {:?} for snippet {} on fresh deny run",
             result.outcome,

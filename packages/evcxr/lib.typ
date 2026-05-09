@@ -143,7 +143,7 @@
 }
 
 #let _read-data(id, format: auto) = {
-  if not _read-mode or id == none { return none }
+  if not _read-mode or id == none or not _index-available(id) { return none }
   let err = _check-error(id)
   if err != none { return none }
   let exts = _manifest-exts(id)

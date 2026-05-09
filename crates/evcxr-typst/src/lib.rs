@@ -31,7 +31,7 @@
 //! evcxr::runtime_hook();
 //!
 //! let mut project = Project::open("main.typ")?;
-//! let report = project.evaluate(&EvalOptions::allow_eval())?;
+//! let report = project.evaluate(&mut EvalOptions::allow_eval())?;
 //! for s in &report.snippets {
 //!     println!("{}: {:?}", s.id, s.outcome);
 //! }
@@ -472,16 +472,22 @@ impl Project {
 
     /// Evaluate every snippet, write sidecars per the snippet-output cache
     /// (D-010), and return a structured report.
-    pub fn evaluate(&mut self, options: &EvalOptions) -> Result<EvaluationReport, Error> {
+    pub fn evaluate(&mut self, options: &mut EvalOptions) -> Result<EvaluationReport, Error> {
         let start = Instant::now();
         let cache_dir = self.cache_dir();
 
         let (snippet_results, hits, misses, validation_issues) = if options.allow_eval {
-            let cb = options.callbacks.as_deref();
-            // callbacks are &dyn EvalCallbacks; we can't pass a reference to
-            // the Box directly through generics, so cast explicitly.
-            let _ = cb; // currently eval::run takes Option<&mut dyn EvalCallbacks>
-            let outcome = eval::run(&self.snippets, &cache_dir, None, options.snippet_timeout)?;
+            // WHY: Take callbacks out into a local so eval::run can borrow them
+            // mutably. Leaving them in options.callbacks (behind &mut EvalOptions)
+            // triggers a compiler invariance error because Box<dyn EvalCallbacks>
+            // carries an implicit 'static bound and &mut references are invariant.
+            let mut cb_box: Option<Box<dyn EvalCallbacks>> = options.callbacks.take();
+            let cb: Option<&mut dyn EvalCallbacks> = match cb_box.as_mut() {
+                Some(b) => Some(b.as_mut()),
+                None => None,
+            };
+            let outcome = eval::run(&self.snippets, &cache_dir, cb, options.snippet_timeout)?;
+            options.callbacks = cb_box;
             let h = outcome.cache_hits;
             let m = outcome.cache_misses;
             (outcome.results, h, m, Vec::new())

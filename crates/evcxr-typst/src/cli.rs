@@ -66,12 +66,12 @@ pub fn run() -> Result<()> {
             root,
         } => {
             let mut project = open_project(&path, root)?;
-            let opts = if allow_eval {
+            let mut opts = if allow_eval {
                 EvalOptions::allow_eval()
             } else {
                 EvalOptions::deny()
             };
-            let report = project.evaluate(&opts)?;
+            let report = project.evaluate(&mut opts)?;
             let error_count = report
                 .snippets
                 .iter()
@@ -92,11 +92,17 @@ pub fn run() -> Result<()> {
                     .iter()
                     .filter(|s| s.outcome == SnippetOutcome::SkippedNoEval)
                     .count();
+                let nag = if skipped > 0 {
+                    " — run with `evcxr-typst run --allow-eval` to evaluate"
+                } else {
+                    ""
+                };
                 eprintln!(
-                    "{} snippets: {} cached, {} need eval — run with `evcxr-typst run --allow-eval` to evaluate.",
+                    "{} snippets: {} cached, {} need eval{}",
                     report.snippets.len(),
                     report.cache_hits,
                     skipped,
+                    nag,
                 );
                 if !report.validation_issues.is_empty() {
                     eprintln!(

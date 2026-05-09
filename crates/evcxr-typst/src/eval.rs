@@ -753,6 +753,23 @@ pub(crate) fn write_available_index(cache_dir: &Path, available_ids: &[&str]) ->
     write_atomically(&cache_dir.join("_index.json"), json.as_bytes())
 }
 
+/// Derive the available-id list from filesystem state and write `_index.json`.
+///
+/// Used by the watch loop where results are accumulated incrementally rather
+/// than returned as a batch. A snippet ID is "available" when its
+/// `<id>.manifest.json` exists (written by `write_mime_sidecars`).
+pub(crate) fn write_available_index_for_snippets(
+    cache_dir: &Path,
+    snippets: &[Snippet],
+) -> Result<(), Error> {
+    let available: Vec<&str> = snippets
+        .iter()
+        .filter(|s| cache_dir.join(format!("{}.manifest.json", s.id)).exists())
+        .map(|s| s.id.as_str())
+        .collect();
+    write_available_index(cache_dir, &available)
+}
+
 /// Validate materialised sidecars for snippets that are expected to have them.
 /// Returns pairs of `(snippet_id, reason)` for any malformed or missing sidecar.
 pub(crate) fn validate_sidecars(
@@ -760,6 +777,11 @@ pub(crate) fn validate_sidecars(
     results: &[SnippetResult],
     cache_dir: &Path,
 ) -> Vec<(String, String)> {
+    debug_assert_eq!(
+        snippets.len(),
+        results.len(),
+        "validate_sidecars: snippets/results length mismatch"
+    );
     let mut issues = Vec::new();
     for (snippet, result) in snippets.iter().zip(results.iter()) {
         if result.outcome != SnippetOutcome::CacheHit {

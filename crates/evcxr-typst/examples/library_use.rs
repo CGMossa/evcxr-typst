@@ -47,7 +47,7 @@ fn main() -> anyhow::Result<()> {
         path
     );
 
-    let report = project.evaluate(&EvalOptions::allow_eval())?;
+    let report = project.evaluate(&mut EvalOptions::allow_eval())?;
     println!(
         "{} snippets evaluated, {} cache hits in {:?}",
         report.snippets.len(),
