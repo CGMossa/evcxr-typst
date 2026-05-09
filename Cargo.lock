@@ -544,6 +544,7 @@ dependencies = [
  "crossbeam-channel",
  "ctrlc",
  "evcxr",
+ "libc",
  "notify",
  "serde",
  "serde_json",

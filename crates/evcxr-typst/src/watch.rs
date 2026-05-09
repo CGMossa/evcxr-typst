@@ -93,8 +93,10 @@ fn watch_thread(
 
     let mut ctx_opt = ctx_opt;
 
-    // Spawn typst watch as a child process.
-    let mut typst_child = spawn_typst_watch(&entry, &root, &cache_dir)?;
+    // Spawn typst watch as a child process; wrap immediately so Drop cleans up
+    // on any early return (e.g. watcher init failure below).
+    let typst_child_raw = spawn_typst_watch(&entry, &root, &cache_dir)?;
+    let typst_child = ChildGuard(typst_child_raw);
 
     // Set up notify watcher with a crossbeam channel.
     let (notify_tx, notify_rx) = bounded::<notify::Result<Event>>(64);
@@ -175,11 +177,8 @@ fn watch_thread(
         }
     }
 
-    // Shutdown: terminate typst watch child, drop CommandContext.
-    if let Some(child) = typst_child.as_mut() {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
+    // Shutdown: ChildGuard Drop handles kill+wait on typst child.
+    drop(typst_child);
     drop(ctx_opt);
     Ok(())
 }
@@ -636,6 +635,22 @@ fn fnv_hash(s: &str) -> u64 {
     h
 }
 
+// ─── ChildGuard ──────────────────────────────────────────────────────────────
+
+/// RAII wrapper that kills and waits for a `typst watch` child on drop.
+///
+/// Ensures the child is cleaned up even when `watch_thread` returns early via `?`.
+struct ChildGuard(Option<std::process::Child>);
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.0.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
 // ─── Backoff ─────────────────────────────────────────────────────────────────
 
 struct Backoff {
@@ -750,6 +765,33 @@ mod tests {
     use super::*;
     use crate::{Snippet, SnippetKind, SnippetOptions};
     use std::path::PathBuf;
+
+    /// Verify that `ChildGuard::drop` kills the child process.
+    ///
+    /// Spawns a long-running `sleep` child, wraps it in `ChildGuard`, drops
+    /// the guard, then asserts the process is no longer alive via `kill -0`.
+    #[test]
+    #[cfg(unix)]
+    fn child_guard_kills_on_drop() {
+        let child = std::process::Command::new("sleep")
+            .arg("300")
+            .spawn()
+            .expect("spawn sleep");
+        let pid = child.id();
+        let guard = ChildGuard(Some(child));
+
+        // Child is alive before drop.
+        let alive = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
+        assert!(alive, "child should be alive before guard drop");
+
+        drop(guard);
+
+        // After drop, kill(pid, 0) should fail (ESRCH — no such process).
+        // Give the OS a moment to reap.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let still_alive = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
+        assert!(!still_alive, "child should be dead after ChildGuard drop");
+    }
 
     fn make_snippet(id: &str, src: &str, doc_order: usize) -> Snippet {
         Snippet {
