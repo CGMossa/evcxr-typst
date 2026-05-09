@@ -576,16 +576,23 @@ impl Project {
     /// through to `typst compile --input evcxr-cache=…` so the package's
     /// `read(…)` calls resolve from the project root regardless of which
     /// `.typ` file issued them.
+    ///
+    /// # Side effects
+    ///
+    /// This method creates the cache directory (and, as a side effect of
+    /// [`std::fs::create_dir_all`], any missing ancestor directories including
+    /// the project root itself) when they don't already exist. This is
+    /// intentional: `canonicalize` requires the path to exist, and the cache
+    /// dir must be on-disk before `typst compile` runs. Root creation is
+    /// covered by the same `create_dir_all` call; no separate root-creation
+    /// step is needed.
     pub fn cache_dir_typst_path(&self) -> Result<String, Error> {
         let cache = self.cache_dir();
         let abs_cache = std::fs::canonicalize(&cache).or_else(|_| {
             std::fs::create_dir_all(&cache)?;
             std::fs::canonicalize(&cache)
         })?;
-        let abs_root = std::fs::canonicalize(&self.root).or_else(|_| {
-            std::fs::create_dir_all(&self.root)?;
-            std::fs::canonicalize(&self.root)
-        })?;
+        let abs_root = std::fs::canonicalize(&self.root)?;
         let rel = abs_cache.strip_prefix(&abs_root).map_err(|_| {
             Error::Discovery(format!(
                 "cache dir {} is not inside project root {}",
@@ -604,25 +611,41 @@ impl Project {
 mod tests {
     use super::*;
 
+    // cache_dir_typst_path implicitly creates root (and the cache dir) via the
+    // cache fallback's create_dir_all. This test pins that behaviour: root must
+    // exist after the call even though no code explicitly calls create_dir_all
+    // on root directly — the cache arm's create_dir_all(root/.evcxr-typst-cache)
+    // creates root as a parent first.
     #[test]
-    fn cache_dir_typst_path_creates_missing_root() {
+    fn cache_dir_typst_path_creates_cache_and_root_via_cache_fallback() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("nonexistent-root");
-        // root does not exist yet
-        assert!(!root.exists());
+        assert!(!root.exists(), "precondition: root must not exist");
 
         let entry = root.join("main.typ");
         let project = Project {
-            entry: entry.clone(),
+            entry,
             root: root.clone(),
             config: ProjectConfig::new(),
             snippets: Vec::new(),
         };
 
-        let result = project.cache_dir_typst_path();
-        assert!(result.is_ok(), "expected Ok, got {:?}", result);
-        assert!(root.exists(), "root should have been created");
-        let path = result.unwrap();
-        assert!(path.starts_with('/'), "Typst path must start with /");
+        let path = project
+            .cache_dir_typst_path()
+            .expect("should succeed even when root does not yet exist");
+
+        assert!(
+            root.exists(),
+            "root must have been created as a side effect"
+        );
+        assert!(
+            root.join(eval::CACHE_DIRNAME).exists(),
+            "cache dir must have been created"
+        );
+        assert_eq!(
+            path,
+            format!("/{}", eval::CACHE_DIRNAME),
+            "Typst path must be absolute and name the cache dir"
+        );
     }
 }
