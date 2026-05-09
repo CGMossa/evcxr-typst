@@ -4,7 +4,7 @@ The Typst package. This is the user-facing surface — everything Typst writers 
 
 ## Status
 
-Phases 1–4 complete (T-I02 through T-I07). All public functions emit `<evcxr-snippet>` / `<evcxr-dep>` metadata markers and read sidecars when run via the CLI. The `_index.json` guard (T-I06) ensures bare `typst compile` always succeeds with placeholder boxes. `error.typ` (T-I07) supplies error-box rendering for compile errors, runtime panics, dep failures, and timeouts. The `setup(min-cli: ...)` / `<evcxr-min-cli>` mechanism (D-019) is wired in `lib.typ`; enforcement lands in T-I08.
+Phases 1–4 complete (T-I02 through T-I08). All public functions emit `<evcxr-snippet>` / `<evcxr-dep>` metadata markers and read sidecars when run via the CLI. The `_index.json` guard (T-I06) ensures bare `typst compile` always succeeds with placeholder boxes. `error.typ` (T-I07) supplies error-box rendering for compile errors, runtime panics, dep failures, and timeouts. The `setup(min-cli: ...)` / `<evcxr-min-cli>` mechanism (D-019, D-026) is wired in `lib.typ`; CLI-side enforcement landed in T-I08. Package version is `0.1.0`.
 
 ## Critical invariants
 

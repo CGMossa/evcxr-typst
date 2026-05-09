@@ -13,15 +13,16 @@ src/
   cache.rs          — Blake3 CAS, Merkle chain, hardlink/copy materialisation, GC
   watch.rs          — notify + debounce, change classification, Plan enum, run_one_cycle
   error_capture.rs  — ErrorSidecar, ErrorEntry, SpanRef, OffsetMap, classify_* constructors
+  version_check.rs  — semver tuple comparison, IncompatibleCliVersion enforcement (D-019, D-026)
 examples/
   library_use.rs    — canonical embedder; mirrors evcxr's example_eval.rs
 ```
 
 ## Status
 
-Phases 1–4 complete (T-I03 through T-I07). All library entry points (`Project::evaluate`, `Project::watch`, `Project::clean_view`) are fully implemented. `main.rs` / `cli.rs` remain thin — every code path goes through the library API.
+Phases 1–4 complete (T-I03 through T-I08). All library entry points (`Project::evaluate`, `Project::watch`, `Project::clean_view`) are fully implemented. `main.rs` / `cli.rs` remain thin — every code path goes through the library API. Both artifacts are at `0.1.0` (D-026).
 
-Next open task on the main track is T-I08 (min-CLI enforcement + version policy DR), currently in PR.
+Remaining main-track work is publishing: Typst package to Universe, CLI to crates.io (blocked on switching the evcxr path-dep to a published version per D-006).
 
 ## Critical invariants
 
