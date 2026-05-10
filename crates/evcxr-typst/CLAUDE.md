@@ -30,7 +30,11 @@ Remaining main-track work is publishing: Typst package to Universe, CLI to crate
 - **evcxr is a path dependency** (`../../.evcxr/evcxr`, from this Cargo.toml) per **D-006** / **D-025**. Don't switch to crates.io until the release pinning task explicitly says so.
 - **Library is clap-free.** clap stays in `src/cli.rs` (binary-only). If you find yourself wanting `clap::Args` in `lib.rs`, push the parsed values across the boundary as plain types instead.
 - **`#![warn(missing_docs)]` on `lib.rs`.** Every new `pub` item needs rustdoc; CI surfaces a warning otherwise. `cargo doc -p evcxr-typst --no-deps` should stay clean.
-- **Watch cold-cache startup latency.** On the first `watch --allow-eval` run against an empty cache, the `Plan::Noop` arm backfills missing sidecars by evaluating each snippet whose `<id>.manifest.json` is absent. First-run latency = N × rustc-compile-time (same as `evcxr-typst run`; typically 60–90 s on cold cache). Subsequent watch restarts hit the warm CAS and materialise in milliseconds. The integration test polls for 120 s to tolerate cold-compile latency.
+- **`watch.rs` invariants** (pinned by `tests/watch_subdir.rs` and `tests/watch_subdir_relative.rs`):
+  1. Notify is set up with `RecursiveMode::Recursive` on `entry.parent()`, so edits to `#include`d files in subdirs trigger eval cycles.
+  2. The first thing `watch_thread` does with `entry` is `std::fs::canonicalize` it. Notify always delivers absolute paths; the comparison side must be absolute too, otherwise `is_relevant` silently drops every event when the user passes a relative CLI path. Don't bypass this — pass the canonical path to `cache_dir_for`, both `watcher.watch` calls, and `run_one_cycle`.
+  3. `is_relevant` excludes anything under `cache_dir` (own sidecar writes mustn't loop) and filters out typst-watch's own `.pdf` / `.svg` rewrites that would otherwise trigger `Noop` cycles every ~660 ms (PR #32, resolves #29).
+  4. Cold-cache startup backfills missing sidecars (PR #33, resolves #30): on the first `watch --allow-eval` against an empty cache, the `Plan::Noop` arm evaluates each snippet whose `<id>.manifest.json` is absent. First-run latency = N × rustc-compile (typically 60–90 s on cold cache); subsequent restarts hit warm CAS in milliseconds. The integration test polls up to 120 s to tolerate cold-compile latency.
 
 ## Build / test
 

@@ -1,0 +1,175 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "evcxr-typst: build",
+      "type": "shell",
+      "command": "cargo build -p evcxr-typst --bin evcxr-typst",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$rustc",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "detail": "Compile the evcxr-typst CLI binary into target/debug/."
+    },
+    {
+      "label": "evcxr-typst: watch (rust-by-example)",
+      "type": "shell",
+      "command": "./target/debug/evcxr-typst",
+      "args": [
+        "watch",
+        "--allow-eval",
+        "--root",
+        ".",
+        "examples/rust-by-example/main.typ"
+      ],
+      "options": {
+        "env": {
+          "EVCXR_TYPST_LOG": "evcxr_typst=info"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [
+        {
+          "owner": "evcxr-typst-watch",
+          "fileLocation": [
+            "relative",
+            "${workspaceFolder}"
+          ],
+          "pattern": [
+            {
+              "regexp": "^.*$",
+              "file": 1,
+              "line": 1,
+              "message": 1
+            }
+          ],
+          "background": {
+            "activeOnStart": true,
+            "beginsPattern": "^watch running; press Ctrl-C to stop\\.$",
+            "endsPattern": "^.*compiled (successfully|with).*$"
+          }
+        }
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": false
+      },
+      "dependsOn": [
+        "evcxr-typst: build"
+      ],
+      "detail": "Start the rbe authoring loop. Edits to examples/rust-by-example/**/*.typ re-evaluate snippets and re-render the PDF. Stop with Ctrl-C in the terminal panel.",
+      "runOptions": {
+        "instanceLimit": 1
+      }
+    },
+    {
+      "label": "evcxr-typst: watch (custom entry)",
+      "type": "shell",
+      "command": "./target/debug/evcxr-typst",
+      "args": [
+        "watch",
+        "--allow-eval",
+        "--root",
+        ".",
+        "${input:entryFile}"
+      ],
+      "options": {
+        "env": {
+          "EVCXR_TYPST_LOG": "evcxr_typst=info"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [
+        {
+          "owner": "evcxr-typst-watch",
+          "fileLocation": [
+            "relative",
+            "${workspaceFolder}"
+          ],
+          "pattern": [
+            {
+              "regexp": "^.*$",
+              "file": 1,
+              "line": 1,
+              "message": 1
+            }
+          ],
+          "background": {
+            "activeOnStart": true,
+            "beginsPattern": "^watch running; press Ctrl-C to stop\\.$",
+            "endsPattern": "^.*compiled (successfully|with).*$"
+          }
+        }
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": false
+      },
+      "dependsOn": [
+        "evcxr-typst: build"
+      ],
+      "detail": "Watch any document. Prompts for the entry file relative to the workspace root.",
+      "runOptions": {
+        "instanceLimit": 1
+      }
+    },
+    {
+      "label": "evcxr-typst: run (one-shot, rust-by-example)",
+      "type": "shell",
+      "command": "./target/debug/evcxr-typst",
+      "args": [
+        "run",
+        "--allow-eval",
+        "--root",
+        ".",
+        "examples/rust-by-example/main.typ"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "dependsOn": [
+        "evcxr-typst: build"
+      ],
+      "detail": "One-shot evaluate + render. Useful for seeding sidecars before starting watch (works around #30)."
+    },
+    {
+      "label": "evcxr-typst: clean (current example dir)",
+      "type": "shell",
+      "command": "./target/debug/evcxr-typst",
+      "args": [
+        "clean",
+        "--gc",
+        "--root",
+        ".",
+        "${input:entryFile}"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "dependsOn": [
+        "evcxr-typst: build"
+      ],
+      "detail": "Drop sidecar view + GC unreferenced CAS entries for a document."
+    }
+  ],
+  "inputs": [
+    {
+      "id": "entryFile",
+      "type": "promptString",
+      "description": "Entry .typ file (relative to workspace root)",
+      "default": "examples/rust-by-example/main.typ"
+    }
+  ]
+}

@@ -33,7 +33,7 @@ For new work, the choices are:
 
 - **Side tracks** (off main critical path, never block main work):
   - Semantic Typst — rust-analyzer integration. Sub-phases T-S01..T-S04 in `docs/BACKLOG.md`; design in `docs/tracks/semantic-typst.md`; tracked as issue #19.
-  - Rust-by-example port — port the upstream book to Typst documents. Sub-phases T-B00..T-B06; design in `docs/tracks/rust-by-example-port.md`; tracked as issue #20.
+  - Rust-by-example port — port the upstream book to Typst documents. Two paths: (a) deterministic mechanical port via `tools/rbe-port/` (sub-phases T-B00..T-B06, design in `docs/tracks/rust-by-example-port.md`); (b) **active alternative path** — incremental hand-port on `track/rbe-incremental` writing chapters one at a time and journalling the experience. See `examples/rust-by-example/CLAUDE.md` for the hand-port conventions and `journal/` for the working log. Both paths can coexist. Tracked as issue #20.
 - **Optional features** — issue #9 (embed typst as a library, design-gated).
 
 Process for picking up work:
@@ -45,10 +45,12 @@ Process for picking up work:
 
 ## Repo layout
 
-- `docs/` — plans, decisions, design specs. Source of truth.
+- `docs/` — plans, decisions, design specs. Source of truth. Has its own `CLAUDE.md` indexing the subareas.
 - `crates/evcxr-typst/` — the Rust CLI. Has its own `CLAUDE.md`.
 - `packages/evcxr/` — the Typst package. Has its own `CLAUDE.md`.
-- `examples/` — end-to-end documents that exercise the integration. Has its own `CLAUDE.md`.
+- `examples/` — end-to-end documents that exercise the integration. Has its own `CLAUDE.md`. `examples/rust-by-example/` is the active rbe hand-port.
+- `journal/` — time-stamped working notes from the rbe port. Has its own `CLAUDE.md` describing the entry shape.
+- `.vscode/` — editor task entries; non-load-bearing for non-VSCode users.
 
 Each scaffolding directory has a local `CLAUDE.md` with directory-specific conventions and required reading. Read the local one before editing anything in that directory.
 
@@ -59,6 +61,8 @@ Each scaffolding directory has a local `CLAUDE.md` with directory-specific conve
 - Default to no comments in code; one short line max when WHY is non-obvious. (Same rule the global `CLAUDE.md` already enforces.)
 - This repo's git history is fresh — feel free to make small commits. Do **not** push to a remote without explicit instruction; no remote is configured by default.
 - **`evcxr-typst run` renders both PDF and SVG** next to the entry file (`<stem>.pdf` and `<stem>.svg`). PDF is the user-facing artifact; SVG is for visual quick-look in a browser without a PDF viewer. Note that Typst SVG embeds glyphs as `<path>` references rather than `<text>` elements, so the SVG is **not** text-grep-able for snippet output — when an agent (or a script) needs to verify *what was evaluated*, read the textual sidecars at `<entry-parent>/.evcxr-typst-cache/<id>.txt` instead. The two together cover the dev loop: SVG for "did it lay out", sidecars for "did it evaluate". Multi-page documents will need `typst compile` invoked directly with a `{p}` template, since the single-file SVG path only works when the document fits one page.
+- **`evcxr-typst watch` covers subdirectories of the entry doc and accepts relative paths.** The notify watcher recurses into `entry.parent()`, so edits to `#include`d chapter files in subdirs (e.g. `examples/rust-by-example/hello/comment.typ`) trigger eval cycles. The entry path is canonicalized at watch start, so relative CLI invocations from the repo root work the same as absolute ones. Both behaviors are pinned by integration tests `crates/evcxr-typst/tests/watch_subdir.rs` and `tests/watch_subdir_relative.rs`. Open follow-ups: #29 (noop runaway after edits subside), #30 (no missing-sidecar backfill at startup — `evcxr-typst run` once seeds the cache).
+- **VSCode integration.** `.vscode/tasks.json` provides build/watch/run/clean entries — `Tasks: Run Task → evcxr-typst: watch (rust-by-example)` is the rbe authoring loop.
 
 ## What NOT to do without checking first
 
