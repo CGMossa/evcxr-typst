@@ -38,6 +38,8 @@ Upstream wraps almost every snippet in `fn main() { ... }`. evcxr executes top-l
 
 Pick *one* per chapter, document the choice in the journal entry, and stay consistent. The current default (until T-B01 ships) is **option 1**: drop the wrapper. See `journal/2026-05-09-001-hello.md`.
 
+**Pick option 2 instead** when the upstream `fn main()` body declares `let` bindings or items (`struct` / `enum` / `fn`) that should *not* leak across chapters. Inlining them as top-level evcxr statements would commit the bindings / items to subsequent chapters' scope. Wrapping them in `fn main() { ... }` and calling `main();` keeps them function-local. See `journal/2026-05-10-001-print.md` for the worked example (bindings `number`, `width` plus a local `struct Structure(i32)`).
+
 ## When you finish a chapter
 
 1. Verify `typst compile --root . main.typ` succeeds (fallback path).
