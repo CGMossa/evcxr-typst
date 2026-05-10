@@ -246,7 +246,30 @@ fn run_one_cycle(
 
     match plan {
         Plan::Noop => {
-            tracing::debug!("noop: no snippet changes");
+            if allow_eval && let Some(ctx) = ctx_opt.as_mut() {
+                let missing: Vec<Snippet> = curr
+                    .iter()
+                    .filter(|s| eval::is_evaluable(s.kind) && !cache::has_sidecar(cache_dir, &s.id))
+                    .cloned()
+                    .collect();
+                if !missing.is_empty() {
+                    tracing::debug!(
+                        count = missing.len(),
+                        "noop with missing sidecars — backfilling"
+                    );
+                    for s in &missing {
+                        let had_panic =
+                            eval_one(ctx, s, cache_dir, env, prev, stdout_rx, stderr_rx)?;
+                        if had_panic {
+                            *prev_had_panic = true;
+                        }
+                    }
+                } else {
+                    tracing::debug!("noop: no snippet changes");
+                }
+            } else {
+                tracing::debug!("noop: no snippet changes");
+            }
         }
         Plan::AppendOnly { new_snippets } => {
             if allow_eval && let Some(ctx) = ctx_opt.as_mut() {

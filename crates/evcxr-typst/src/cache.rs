@@ -402,6 +402,15 @@ pub(crate) fn gc(cache_root: &Path) -> Result<usize, crate::Error> {
 
 // ─── View cleanup ─────────────────────────────────────────────────────────────
 
+/// Return `true` when the id-addressed manifest sidecar exists in `cache_root`.
+///
+/// Used by the watch loop to detect snippets that need backfill on startup.
+pub(crate) fn has_sidecar(cache_root: &Path, snippet_id: &str) -> bool {
+    cache_root
+        .join(format!("{snippet_id}.manifest.json"))
+        .exists()
+}
+
 /// Remove id-addressed view files for a specific snippet from the cache root.
 /// Does NOT touch the CAS.
 pub(crate) fn drop_view_for_id(cache_root: &Path, snippet_id: &str) {

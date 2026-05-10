@@ -30,6 +30,7 @@ Remaining main-track work is publishing: Typst package to Universe, CLI to crate
 - **evcxr is a path dependency** (`../../.evcxr/evcxr`, from this Cargo.toml) per **D-006** / **D-025**. Don't switch to crates.io until the release pinning task explicitly says so.
 - **Library is clap-free.** clap stays in `src/cli.rs` (binary-only). If you find yourself wanting `clap::Args` in `lib.rs`, push the parsed values across the boundary as plain types instead.
 - **`#![warn(missing_docs)]` on `lib.rs`.** Every new `pub` item needs rustdoc; CI surfaces a warning otherwise. `cargo doc -p evcxr-typst --no-deps` should stay clean.
+- **Watch cold-cache startup latency.** On the first `watch --allow-eval` run against an empty cache, the `Plan::Noop` arm backfills missing sidecars by evaluating each snippet whose `<id>.manifest.json` is absent. First-run latency = N × rustc-compile-time (same as `evcxr-typst run`; typically 60–90 s on cold cache). Subsequent watch restarts hit the warm CAS and materialise in milliseconds. The integration test polls for 120 s to tolerate cold-compile latency.
 
 ## Build / test
 
