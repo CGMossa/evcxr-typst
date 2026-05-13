@@ -11,7 +11,9 @@ Port the `Display` subchapter immediately after the `Debug` chapter, with `evcxr
 
 ## What happened
 
-The first code block defines `Structure` plus a `fmt::Display` implementation and has no stdout. It uses the same raw-source plus `rust-hidden(...)` pattern as the definitions-only block in the `Debug` chapter. That pattern matters here because `Structure` intentionally shadows a same-named type introduced in the prior debug chapter; the run order stays explicit, and no fake output box is rendered for a block that never prints.
+The first code block defines `Structure` plus a `fmt::Display` implementation and has no stdout. I first tried to make source-visible examples evaluate through the existing `rust(render: "source", ...)` idea. That surfaced the real issue: in one long evcxr session this block redefines `Structure`, which breaks the already-persisted `Deep(Structure)` from the previous `Debug` chapter because the new `Structure` no longer implements `Debug`.
+
+The fix is chapter-level, not package-level: explanatory no-output blocks that define top-level items should be rendered as plain Rust source and not evaluated into the shared context. The runnable examples still evaluate.
 
 The runnable `MinMax` / `Point2D` example uses `rust-main(...)` and produced the upstream output under watch. The chapter did not need any Rust source changes beyond preserving upstream comments and mdBook prose in Typst form.
 
@@ -19,7 +21,7 @@ The runnable `MinMax` / `Point2D` example uses `rust-main(...)` and produced the
 
 The formatting chapters are now exercising a repeatable authoring convention:
 
-- definitions-only examples: render raw source, evaluate with `rust-hidden(...)`;
+- definitions-only examples that introduce top-level items: render plain source only, because evaluating them can pollute or break the shared evcxr context;
 - runnable `fn main()` examples: render unchanged source with `rust-main(...)`;
 - activities: keep expected-output raw blocks as prose, not evaluable snippets.
 
@@ -27,4 +29,4 @@ That convention is stable enough to use for the remaining formatted-print childr
 
 ## Follow-ups
 
-- [ ] Consider a small package helper for source-visible hidden evaluation, since `#raw(src.text, ...)` plus `#evcxr.rust-hidden(src, ...)` is now repeated.
+- [x] Resolve the source-visible hidden-eval idea by not evaluating top-level explanatory definitions; the Display `Structure` collision proves this must stay source-only unless we add an explicit isolated-eval mode later.

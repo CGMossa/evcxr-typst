@@ -6,6 +6,8 @@
 
 `fmt::Debug` hardly looks compact and clean, so it is often advantageous to customize the output appearance. This is done by manually implementing `fmt::Display`, which uses the `{}` print marker.
 
+This first block is also rendered source-only. In a single long evcxr session it would redefine `Structure` from the previous `Debug` chapter and break the already-persisted `Deep(Structure)` example.
+
 #let display-structure-src = ```rust
 // Import (via `use`) the `fmt` module to make it available.
 use std::fmt;
@@ -29,7 +31,6 @@ impl fmt::Display for Structure {
 ```
 
 #raw(display-structure-src.text, lang: "rust", block: true)
-#evcxr.rust-hidden(display-structure-src, id: "rbe-hello-print-display-structure")
 
 `fmt::Display` may be cleaner than `fmt::Debug`, but this presents a problem for the standard library. How should ambiguous types be displayed? For example, if the standard library implemented a single style for all `Vec<T>`, what style should it be?
 

@@ -8,7 +8,7 @@ All types which want to use `std::fmt` formatting traits require an implementati
 
 The `fmt::Debug` trait makes this very straightforward. All types can derive, automatically creating the `fmt::Debug` implementation. This is not true for `fmt::Display`, which must be manually implemented.
 
-This first block defines two structures and has no stdout of its own; a successful run materializes only its manifest sidecar.
+This first block defines two structures and has no stdout of its own. It is rendered as source only: evaluating top-level explanatory definitions would leak them into the shared evcxr context for later chapters.
 
 #let debug-derive-src = ```rust
 // This structure cannot be printed either with `fmt::Display` or
@@ -22,7 +22,6 @@ struct DebugPrintable(i32);
 ```
 
 #raw(debug-derive-src.text, lang: "rust", block: true)
-#evcxr.rust-hidden(debug-derive-src, id: "rbe-hello-print-debug-derive")
 
 All standard-library types are automatically printable with `{:?}` too.
 
