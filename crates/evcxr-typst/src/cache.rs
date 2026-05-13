@@ -83,6 +83,9 @@ pub(crate) fn compute_key(
 ) -> String {
     let mut h = Hasher::new();
     h.update(b"evcxr-typst-cache/v1\n");
+    h.update(b"kind=");
+    h.update(format!("{:?}", snippet.kind).as_bytes());
+    h.update(b"\n");
     h.update(b"src=");
     h.update(snippet.src.as_bytes());
     h.update(b"\n");

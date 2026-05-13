@@ -268,7 +268,8 @@ pub(crate) fn run(
             None
         };
 
-        let exec_result = context.execute(&snippet.src);
+        let eval_src = source_for_execute(snippet);
+        let exec_result = context.execute(eval_src.as_ref());
 
         // Signal the watchdog to stand down before joining.
         timed_out.store(true, Ordering::Relaxed);
@@ -738,6 +739,20 @@ pub(crate) fn is_evaluable(kind: SnippetKind) -> bool {
             | SnippetKind::RustData
             | SnippetKind::RustMain
     )
+}
+
+/// Source submitted to evcxr for a snippet.
+///
+/// `rust-main(...)` keeps the rendered and metadata source faithful to the
+/// user's `fn main() { ... }` block, but evcxr only defines that function.
+/// The hidden trailing call is an execution detail, not part of the rendered
+/// Typst source.
+pub(crate) fn source_for_execute(snippet: &Snippet) -> std::borrow::Cow<'_, str> {
+    if snippet.kind == SnippetKind::RustMain {
+        std::borrow::Cow::Owned(format!("{}\nmain();", snippet.src))
+    } else {
+        std::borrow::Cow::Borrowed(&snippet.src)
+    }
 }
 
 pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), Error> {

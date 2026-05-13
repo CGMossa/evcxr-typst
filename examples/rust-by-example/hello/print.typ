@@ -14,9 +14,9 @@ Printing is handled by a series of macros defined in `std::fmt`, some of which a
 
 All parse text in the same fashion. As a plus, Rust checks formatting correctness at compile time.
 
-Upstream marks this snippet `ignore` because of a deliberate FIXME: `println!("My name is {0}, {1} {0}", "Bond")` is missing the `"James"` argument and will fail to compile as written. Per-chapter fidelity decision (option 2): show `fn main()` faithfully and append a synthetic `main();` call so the snippet evaluates; in the FIXME line, supply the missing `"James"` so the snippet compiles cleanly. The deliberately-commented `Structure(3)` line is preserved verbatim. See `journal/2026-05-10-001-print.md`.
+Upstream marks this snippet `ignore` because of a deliberate FIXME: `println!("My name is {0}, {1} {0}", "Bond")` is missing the `"James"` argument and will fail to compile as written. This port keeps `fn main()` faithfully and uses `evcxr.rust-main(...)` so the snippet evaluates; in the FIXME line, it supplies the missing `"James"` so the snippet compiles cleanly. The deliberately-commented `Structure(3)` line is preserved verbatim. See `journal/2026-05-10-001-print.md`.
 
-#evcxr.rust(id: "rbe-hello-print", ```rust
+#evcxr.rust-main(id: "rbe-hello-print", ```rust
 fn main() {
     // In general, the `{}` will be automatically replaced with any
     // arguments. These will be stringified.
@@ -74,7 +74,6 @@ fn main() {
     let width: usize = 5;
     println!("{number:>width$}");
 }
-main();
 ```)
 
 `std::fmt` contains many traits which govern the display of text. The base form of two important ones are:

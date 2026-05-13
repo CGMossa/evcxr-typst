@@ -55,6 +55,7 @@ fn watch_thread(
     let cache_dir = cache_dir_for(&entry);
     fs::create_dir_all(&cache_dir)?;
     cache::ensure_readme(&cache_dir)?;
+    eval::write_available_index(&cache_dir, &[])?;
 
     let (ctx_opt, stdout_rx, stderr_rx, _stdout_drain, _stderr_drain) = if allow_eval {
         let (mut ctx, outputs) =
@@ -397,7 +398,8 @@ fn eval_one(
     }
 
     let start = std::time::Instant::now();
-    let exec_result = ctx.execute(&snippet.src);
+    let eval_src = eval::source_for_execute(snippet);
+    let exec_result = ctx.execute(eval_src.as_ref());
     let _elapsed = start.elapsed();
 
     thread::sleep(Duration::from_millis(20));

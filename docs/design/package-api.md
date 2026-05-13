@@ -4,7 +4,7 @@ Public API of `packages/evcxr/` — what users write inside their `.typ` documen
 
 > **Reconciliation needed.** T-D02's example gallery is not on disk yet (`docs/design/examples/` is empty). This design proceeds from the briefing's strawman primitives (`rust`, `rust-out`, `rust-display`, `rust-hidden`, `rust-data`, `dep`) and the requirements in ARCHITECTURE.md and DECISIONS.md. The orchestrator should reconcile naming with the gallery once it lands; if a gallery example forces a different shape, that takes precedence and the contradictions become real ones to resolve.
 
-> **Per-snippet `timeout:` resolved (D-017).** Shipped in v0 on every eval-emitting function (`rust`, `rust-out`, `rust-display`, `rust-hidden`, `rust-data`); `dep()` does *not* accept it. Cancellation is SIGKILL-only; semantics match D-009 (host child dies, fresh child re-spawns, `let` bindings lost, items recompiled). See § 2.8 for the kwarg shape and § 6 for what stays deferred.
+> **Per-snippet `timeout:` resolved (D-017).** Shipped in v0 on every eval-emitting function (`rust`, `rust-main`, `rust-out`, `rust-display`, `rust-hidden`, `rust-data`); `dep()` does *not* accept it. Cancellation is SIGKILL-only; semantics match D-009 (host child dies, fresh child re-spawns, `let` bindings lost, items recompiled). See § 2.8 for the kwarg shape and § 6 for what stays deferred.
 
 ---
 
@@ -96,6 +96,22 @@ The answer is #rust-out(```rust print!("{}", 6 * 7);```).
 ```
 
 This is the inline-friendly form; the rendered output is `text/plain` content from `<id>.txt`, wrapped in nothing more than a default `raw` (so it composes inline). Caller can wrap it in `box`/`text` themselves.
+
+### 2.2a `rust-main(src, ..)` — source with `fn main()` auto-called
+
+```typc
+#let rust-main(src, id: none, deps: (), render: auto, timeout: auto, caption: none) -> content
+```
+
+Renders the source unchanged, emits `kind: "rust-main"`, and asks the CLI to append a hidden `main();` call when evaluating. This is for examples copied from Rust files, rust-by-example, or mdBook chapters where the visible source should retain its `fn main() { ... }` wrapper.
+
+```typ
+#rust-main(```rust
+fn main() {
+    println!("Hello World!");
+}
+```)
+```
 
 ### 2.3 `rust-display(src, ..)` — display object only
 
@@ -223,7 +239,7 @@ Returning a **handle** (an opaque dict with the dep's id) is supported via `let 
 
 ### 2.8 `timeout:` kwarg — per-snippet override (D-017)
 
-Every eval-emitting function (`rust`, `rust-out`, `rust-display`, `rust-hidden`, `rust-data`) accepts `timeout:`. **`dep()` does not** — `:dep` resolution does not run inside the timed `execute()` call (see "What `timeout:` does *not* cover" below).
+Every eval-emitting function (`rust`, `rust-main`, `rust-out`, `rust-display`, `rust-hidden`, `rust-data`) accepts `timeout:`. **`dep()` does not** — `:dep` resolution does not run inside the timed `execute()` call (see "What `timeout:` does *not* cover" below).
 
 **Accepted values.**
 
@@ -294,6 +310,7 @@ Per D-004, `typst compile main.typ` without running the CLI must succeed and pro
 | Function | Fallback rendering |
 |---|---|
 | `rust` | Source block + a placeholder box where the output would be. |
+| `rust-main` | Source block + a placeholder box where the `main()` output would be. |
 | `rust-out` | A single placeholder box with text "(rust output not yet evaluated)". |
 | `rust-display` | A placeholder box sized to a default 4cm × 3cm with a Unicode picture-frame glyph (U+1F5BC) and the snippet id. |
 | `rust-hidden` | Nothing (same as success). |
@@ -391,7 +408,7 @@ Each call emits exactly one `metadata((...))<evcxr-snippet>` (or `<evcxr-dep>`) 
 {
   "v": 1,
   "id": "intro-loop",
-  "kind": "rust" | "rust-out" | "rust-display" | "rust-hidden" | "rust-data",
+  "kind": "rust" | "rust-main" | "rust-out" | "rust-display" | "rust-hidden" | "rust-data",
   "src": "for i in 0..3 { println!(\"{i}\"); }",
   "deps": ["serde-derive-abc", "plotters-def"],
   "options": {
