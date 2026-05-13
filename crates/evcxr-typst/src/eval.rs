@@ -27,6 +27,7 @@ use std::sync::{
 use std::thread;
 use std::time::{Duration, Instant};
 
+use base64::Engine;
 use evcxr::CommandContext;
 use serde_json::json;
 
@@ -532,19 +533,23 @@ fn mime_to_ext_and_bytes(mime: &str, payload: &str) -> Result<(String, Vec<u8>),
         "image/svg+xml" => Ok(("svg".to_owned(), payload.as_bytes().to_vec())),
         "application/json" => Ok(("json".to_owned(), payload.as_bytes().to_vec())),
         "image/png" => {
-            let bytes = base64::decode(payload)
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(payload)
                 .map_err(|e| Error::Evcxr(format!("base64 decode error for image/png: {e}")))?;
             Ok(("png".to_owned(), bytes))
         }
         "image/jpeg" => {
-            let bytes = base64::decode(payload)
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(payload)
                 .map_err(|e| Error::Evcxr(format!("base64 decode error for image/jpeg: {e}")))?;
             Ok(("jpg".to_owned(), bytes))
         }
         "application/cbor" => {
-            let bytes = base64::decode(payload).map_err(|e| {
-                Error::Evcxr(format!("base64 decode error for application/cbor: {e}"))
-            })?;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(payload)
+                .map_err(|e| {
+                    Error::Evcxr(format!("base64 decode error for application/cbor: {e}"))
+                })?;
             Ok(("cbor".to_owned(), bytes))
         }
         other => {
@@ -558,7 +563,9 @@ fn mime_to_ext_and_bytes(mime: &str, payload: &str) -> Result<(String, Vec<u8>),
                 .unwrap_or("bin")
                 .to_owned();
             // Try base64-decode; on failure use raw payload bytes.
-            let bytes = base64::decode(payload).unwrap_or_else(|_| payload.as_bytes().to_vec());
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(payload)
+                .unwrap_or_else(|_| payload.as_bytes().to_vec());
             Ok((ext, bytes))
         }
     }
