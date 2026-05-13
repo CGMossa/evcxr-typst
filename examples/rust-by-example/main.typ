@@ -23,3 +23,4 @@
 #include "hello.typ"
 #include "hello/comment.typ"
 #include "hello/print.typ"
+#include "hello/print/print_debug.typ"
