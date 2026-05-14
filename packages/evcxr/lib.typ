@@ -186,6 +186,15 @@
   _read-stdout("rust", id, src: _src-text(src))
 }
 
+#let rust-main(src, id: none, deps: (), render: auto, timeout: auto, caption: none) = {
+  _emit-snippet("rust-main", src, id, deps, (
+    render: render, timeout: timeout, caption: caption,
+    auto-call: "main",
+  ))
+  raw(_src-text(src), lang: "rust", block: true)
+  _read-stdout("rust-main", id, src: _src-text(src))
+}
+
 #let rust-out(src, id: none, deps: (), timeout: auto) = {
   _emit-snippet("rust-out", src, id, deps, (timeout: timeout))
   _read-stdout("rust-out", id, src: _src-text(src))

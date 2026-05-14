@@ -27,6 +27,8 @@ Mirrors upstream's `SUMMARY.md` ordering. Add a new row when you port a chapter;
 | `hello.md` | [`hello.typ`](hello.typ) | ported (2026-05-09) |
 | `hello/comment.md` | [`hello/comment.typ`](hello/comment.typ) | ported (2026-05-09) |
 | `hello/print.md` | [`hello/print.typ`](hello/print.typ) | ported (2026-05-10) |
+| `hello/print/print_debug.md` | [`hello/print/print_debug.typ`](hello/print/print_debug.typ) | ported (2026-05-13) |
+| `hello/print/print_display.md` | [`hello/print/print_display.typ`](hello/print/print_display.typ) | ported (2026-05-13) |
 
 Anything not yet listed is **todo**.
 

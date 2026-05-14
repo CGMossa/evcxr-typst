@@ -30,15 +30,16 @@ Chapter `.typ` files mirror upstream paths (e.g. `hello.typ`, `primitives/litera
 
 ## Fidelity vs. evcxr's evaluation model
 
-Upstream wraps almost every snippet in `fn main() { ... }`. evcxr executes top-level statements and would *define* `main` without calling it. Until `rust-main(...)` ships (T-B01, D-022), hand-written chapters have a choice:
+Upstream wraps almost every snippet in `fn main() { ... }`. evcxr executes top-level statements and would *define* `main` without calling it. For new hand-written chapters, prefer `evcxr.rust-main(...)` when the upstream snippet contains `fn main() { ... }`: it renders the upstream source unchanged and the CLI appends a hidden `main();` call during evaluation.
+
+Older hand-written chapters may still use one of the pre-`rust-main` choices:
 
 1. **Inline body, drop the wrapper.** Most natural for evcxr; loses the upstream "this is `main`" pedagogical framing.
-2. **Show the wrapper, append a synthetic `main();` call to the visible source.** Fidelity to upstream's *visible* source; the trailing call is honest about the eval model.
-3. **Wait for `rust-main(...)`.** Cleanest long-term, but blocks chapters today.
+2. **Show the wrapper, append a synthetic `main();` call to the visible source.** Historical bridge used before `rust-main`; avoid this in new chapters.
 
-Pick *one* per chapter, document the choice in the journal entry, and stay consistent. The current default (until T-B01 ships) is **option 1**: drop the wrapper. See `journal/2026-05-09-001-hello.md`.
+Pick one convention per chapter, document the choice in the journal entry, and stay consistent.
 
-**Pick option 2 instead** when the upstream `fn main()` body declares `let` bindings or items (`struct` / `enum` / `fn`) that should *not* leak across chapters. Inlining them as top-level evcxr statements would commit the bindings / items to subsequent chapters' scope. Wrapping them in `fn main() { ... }` and calling `main();` keeps them function-local. See `journal/2026-05-10-001-print.md` for the worked example (bindings `number`, `width` plus a local `struct Structure(i32)`).
+Use `rust-main(...)` especially when the upstream `fn main()` body declares `let` bindings or items (`struct` / `enum` / `fn`) that should not leak across chapters. Inlining them as top-level evcxr statements would commit the bindings / items to subsequent chapters' scope. Keeping them inside `fn main() { ... }` keeps them function-local. See `journal/2026-05-10-001-print.md` for the original worked example (bindings `number`, `width` plus a local `struct Structure(i32)`).
 
 ## When you finish a chapter
 
