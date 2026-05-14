@@ -891,4 +891,42 @@ mod tests {
             ":dep image = { version = \"0.24\", features = [\"jpeg\", \"png\"] }"
         );
     }
+
+    fn make_snippet(kind: SnippetKind, src: &str) -> Snippet {
+        Snippet {
+            id: "test".to_owned(),
+            kind,
+            file: PathBuf::from("main.typ"),
+            doc_order: 0,
+            src: src.to_owned(),
+            options: SnippetOptions::None,
+            timeout_ms: None,
+        }
+    }
+
+    #[test]
+    fn source_for_execute_rust_main_appends_main_call() {
+        // D-022: rust-main keeps the rendered Typst source faithful to upstream
+        // (`fn main() { ... }`) and the CLI synthesises a trailing `main();`
+        // call only when handing the snippet to evcxr.
+        let s = make_snippet(SnippetKind::RustMain, "fn main() {\n    println!(\"hi\");\n}");
+        assert_eq!(
+            source_for_execute(&s).as_ref(),
+            "fn main() {\n    println!(\"hi\");\n}\nmain();"
+        );
+    }
+
+    #[test]
+    fn source_for_execute_other_kinds_pass_through() {
+        for kind in [
+            SnippetKind::Rust,
+            SnippetKind::RustOut,
+            SnippetKind::RustDisplay,
+            SnippetKind::RustHidden,
+            SnippetKind::RustData,
+        ] {
+            let s = make_snippet(kind, "let x = 1;");
+            assert_eq!(source_for_execute(&s).as_ref(), "let x = 1;");
+        }
+    }
 }

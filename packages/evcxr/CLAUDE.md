@@ -17,6 +17,7 @@ Phases 1–4 complete (T-I02 through T-I08). All public functions emit `<evcxr-s
 | Function | Decision |
 |---|---|
 | `rust`, `rust-out`, `rust-display`, `rust-hidden`, `rust-data` | D-012 |
+| `rust-main` (CLI appends a hidden `main();` call; `options.auto-call: "main"` recorded additively per D-019) | D-022 |
 | `dep` (inline-anywhere) | D-013 |
 | `rust-data` failure shape (`fallback:` kwarg, returns `none` on snippet error) | D-015 |
 | `timeout:` kwarg on all eval functions | D-017 |

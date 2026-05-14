@@ -3,7 +3,7 @@
 **Date:** 2026-05-13
 **Branch:** codex/rbe-incremental
 **Upstream source:** `.rust-by-example/src/hello/print/print_display.md` (snapshot 898f0ac)
-**Resulting commit:** TBD
+**Resulting commits:** 14fe22b (chapter port), 1ba0906 (keep explanatory defs source-only)
 
 ## What I tried
 
