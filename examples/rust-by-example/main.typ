@@ -28,3 +28,4 @@
 #include "hello/print/print_display/testcase_list.typ"
 #include "hello/print/fmt.typ"
 #include "primitives.typ"
+#include "primitives/literals.typ"
