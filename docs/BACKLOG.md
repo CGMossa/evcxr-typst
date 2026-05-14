@@ -351,7 +351,7 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
 
 ### T-B01 · `tools/rbe-port/` skeleton + `rust-main` package addition
 
-- **Status:** open
+- **Status:** in progress — rust-main half shipped via #39 (2026-05-14); porter half still open
 - **Track:** Rust-by-example port
 - **Depends on:** main-plan **T-I02** shipped (the `evcxr` package must exist to extend it with `rust-main`)
 - **Reference reads:**
@@ -361,9 +361,9 @@ Status legend: `open` · `in-progress` · `done` · `blocked` · `superseded`
   - `docs/design/package-api.md` (the function set `rust-main` joins)
   - `.rust-by-example/src/hello.md` and `custom_types/structs.md` (the canonical inputs)
 - **Briefing:** Two pieces in one task:
-  1. **`tools/rbe-port/`**: new workspace member, Rust binary. clap CLI: `rbe-port <input-dir> <output-dir> [--phase B1|B2|…]`. Markdown parser via `pulldown-cmark`; Rust snippet detection via `syn` (specifically: detect `fn main() { … }` to know whether to emit `rust-main` vs `rust`); `summary.rs` parses upstream `SUMMARY.md` into a tree. Output: per-chapter `.typ` files mirroring the input directory structure, plus `manifest.json` capturing input commit SHA and per-file SHA-256. Determinism: same input bytes → byte-identical output. Golden tests under `tools/rbe-port/tests/golden/` for at least three inputs covering plain `rust`, `rust,editable`, and `rust,ignore`.
-  2. **`rust-main` package addition**: extend `packages/evcxr/lib.typ` with `rust-main(src, ..)` mirroring `rust(...)`'s kwargs. Metadata emitted is `kind: "rust-main"` (a new `kind` variant — additive per D-019, no `v` bump) with `options.auto-call: "main"`. The CLI side (T-I03 onward) will know to evaluate the snippet and then synthesise a `main();` invocation; a stub of that contract goes into `docs/design/package-api.md` § 2 as the new `2.9` subsection.
-- **Done when:** `tools/rbe-port/` builds clean and converts `.rust-by-example/src/hello.md` to a `.typ` file that uses `rust-main` and renders correctly under `typst compile --root . examples/rust-by-example/hello.typ`. Golden tests pass. `lib.typ` exports `rust-main`. `package-api.md` § 2.9 added.
+  1. **`tools/rbe-port/`** *(still open)*: new workspace member, Rust binary. clap CLI: `rbe-port <input-dir> <output-dir> [--phase B1|B2|…]`. Markdown parser via `pulldown-cmark`; Rust snippet detection via `syn` (specifically: detect `fn main() { … }` to know whether to emit `rust-main` vs `rust`); `summary.rs` parses upstream `SUMMARY.md` into a tree. Output: per-chapter `.typ` files mirroring the input directory structure, plus `manifest.json` capturing input commit SHA and per-file SHA-256. Determinism: same input bytes → byte-identical output. Golden tests under `tools/rbe-port/tests/golden/` for at least three inputs covering plain `rust`, `rust,editable`, and `rust,ignore`.
+  2. **`rust-main` package addition** *(done — PR #39)*: `packages/evcxr/lib.typ` exports `rust-main(src, ..)` mirroring `rust(...)`'s kwargs. Metadata emitted is `kind: "rust-main"` with `options.auto-call: "main"`. The CLI's `eval::source_for_execute` synthesises a trailing `main();` call. `docs/design/package-api.md` § 2.2a documents the contract. Used in `examples/rust-by-example/hello/print*.typ`.
+- **Done when:** `tools/rbe-port/` builds clean and converts `.rust-by-example/src/hello.md` to a `.typ` file that uses `rust-main` and renders correctly under `typst compile --root . examples/rust-by-example/hello.typ`. Golden tests pass. (Piece 2 already met: `lib.typ` exports `rust-main`; spec lives in `package-api.md` § 2.2a, not § 2.9.)
 
 ### T-B02 · Phase B1 — port Hello / Primitives / Custom Types (~15 chapters)
 
