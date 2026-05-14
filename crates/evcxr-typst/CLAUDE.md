@@ -48,7 +48,7 @@ cargo doc -p evcxr-typst --no-deps         # must stay missing-docs-warning-clea
 cargo test -p evcxr-typst
 ```
 
-When tests start touching `EvalContext`, follow evcxr's CI rules: `cargo test -- --test-threads 1`. Multiple `EvalContext`s in parallel don't work (it's a global-process limitation, not flakiness).
+`cargo test` is forced single-threaded via `.cargo/config.toml`'s `[env] RUST_TEST_THREADS = "1"` (issue #34). Multiple `EvalContext`s in parallel don't work — `CommandContext` is process-global. The config makes the constraint invisible: bare `cargo test -p evcxr-typst` works without the `-- --test-threads 1` flag. Library consumers of `evcxr-typst` must serialise their own `Project::evaluate` / `Project::watch` calls.
 
 ## Design references — read before coding
 

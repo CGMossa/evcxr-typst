@@ -1,0 +1,11 @@
+# Issue #34: evcxr's `CommandContext` is process-global (it spawns a child
+# binary via runtime_hook and shares the rustc artifact cache). Parallel
+# `cargo test` invocations race on that singleton, deadlock, or corrupt
+# each other's state. Force the libtest harness to single-threaded so
+# `cargo test -p evcxr-typst` works without `-- --test-threads 1`.
+#
+# Library consumers of `evcxr-typst` should serialise their own
+# `Project::evaluate` / `Project::watch` calls; this only handles the
+# in-tree tests.
+[env]
+RUST_TEST_THREADS = "1"
