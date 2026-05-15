@@ -11,6 +11,8 @@ Phases 1–4 complete (T-I02 through T-I08). All public functions emit `<evcxr-s
 - **D-004 — fallback by default.** Bare `typst compile` of any document using this package must succeed and produce a sensible PDF, even when no Rust has been evaluated. `lib.typ` must never produce a hard error from a missing sidecar; it falls back to the `placeholder()` from `fallback.typ`.
 - **The package never executes Rust.** All evaluation is gated behind the CLI being explicitly run with `--allow-eval`.
 - **The package only ever reads the id-addressed materialized view** of the cache (per D-010), not the CAS. The CLI is responsible for materializing the view.
+- **`id:` is required for evaluated output to render.** The CLI computes a default ID from the source hash (blake3) but Typst cannot recompute it, so a snippet without `id:` always shows a placeholder even after `evcxr-typst run`. Output-rendering functions (`rust`, `rust-main`, `rust-out`, `rust-display`, `rust-html`) emit a visible warning box when `id:` is missing and the CLI has run. In fallback mode, the warning is suppressed (D-004 preserved). `rust-hidden` and `rust-data` are exempt — they render nothing visible.
+- **Labels `<id>` / `<id-out>` are only emitted for explicitly-provided ids.** Auto-derived IDs (blake3 hashes) do not get labels. `<id-out>` is only emitted when real evaluated output is present — never on fallback placeholders. `rust-hidden` and `rust-data` emit no labels.
 
 ## Public API — pinned by decision records
 
@@ -22,6 +24,7 @@ Phases 1–4 complete (T-I02 through T-I08). All public functions emit `<evcxr-s
 | `rust-data` failure shape (`fallback:` kwarg, returns `none` on snippet error) | D-015 |
 | `timeout:` kwarg on all eval functions | D-017 |
 | `setup(min-cli: ...)` and `<evcxr-min-cli>` marker | D-019 |
+| Labels `<id>` / `<id-out>` on code and output blocks when explicit `id:` is provided | id-as-label |
 | `render:` kwarg on `rust`/`rust-main` — now live: "source", "output", "both" | inert-kwargs |
 | `caption:` kwarg on `rust`/`rust-main` — now live: wraps in `figure(caption:)` | inert-kwargs |
 
