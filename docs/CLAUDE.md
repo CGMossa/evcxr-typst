@@ -17,6 +17,7 @@ Source of truth for plans, decisions, design, and the agent-ready task queue. Sk
 - `design/` — per-area design specs (cache, watch loop, multi-file, package API, snippet semantics, errors, schema versioning, etc.). Has its own `CLAUDE.md` listing what each file covers.
 - `tracks/` — off-main-critical-path side tracks: Semantic Typst (#19), Rust-by-example port (#20). Has its own `README.md`.
 - `tutorial/` — task-oriented "how do I X" docs for end users of evcxr-typst. Has its own `CLAUDE.md` and `README.md`.
+- `operations/` — runbooks and procedures for autonomous/agent-driven workflows. Currently holds `rbe-autoloop.md` (the `/loop`-driven hand-port protocol with bug-fix subroutine).
 
 ## Conventions
 
