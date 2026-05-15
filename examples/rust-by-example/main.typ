@@ -36,3 +36,4 @@
 #include "custom_types/enum.typ"
 #include "custom_types/enum/enum_use.typ"
 #include "custom_types/enum/c_like.typ"
+#include "custom_types/enum/testcase_linked_list.typ"
