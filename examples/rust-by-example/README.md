@@ -43,6 +43,10 @@ Mirrors upstream's `SUMMARY.md` ordering. Add a new row when you port a chapter;
 | `custom_types/enum/testcase_linked_list.md` | [`custom_types/enum/testcase_linked_list.typ`](custom_types/enum/testcase_linked_list.typ) | ported (2026-05-15) |
 | `custom_types/constants.md` | [`custom_types/constants.typ`](custom_types/constants.typ) | ported source-only (2026-05-15) |
 | `variable_bindings.md` | [`variable_bindings.typ`](variable_bindings.typ) | ported (2026-05-15) |
+| `variable_bindings/mut.md` | [`variable_bindings/mut.typ`](variable_bindings/mut.typ) | ported source-only (2026-05-15) |
+| `variable_bindings/scope.md` | [`variable_bindings/scope.typ`](variable_bindings/scope.typ) | ported (2026-05-15) |
+| `variable_bindings/declare.md` | [`variable_bindings/declare.typ`](variable_bindings/declare.typ) | ported source-only (2026-05-15) |
+| `variable_bindings/freeze.md` | [`variable_bindings/freeze.typ`](variable_bindings/freeze.typ) | ported source-only (2026-05-15) |
 
 Anything not yet listed is **todo**.
 

@@ -39,3 +39,7 @@
 #include "custom_types/enum/testcase_linked_list.typ"
 #include "custom_types/constants.typ"
 #include "variable_bindings.typ"
+#include "variable_bindings/mut.typ"
+#include "variable_bindings/scope.typ"
+#include "variable_bindings/declare.typ"
+#include "variable_bindings/freeze.typ"
