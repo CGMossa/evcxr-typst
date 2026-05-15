@@ -52,6 +52,10 @@ Mirrors upstream's `SUMMARY.md` ordering. Add a new row when you port a chapter;
 | `types/literals.md` | [`types/literals.typ`](types/literals.typ) | ported (2026-05-15) |
 | `types/inference.md` | [`types/inference.typ`](types/inference.typ) | ported (2026-05-15) |
 | `types/alias.md` | [`types/alias.typ`](types/alias.typ) | ported (2026-05-15) |
+| `conversion.md` | [`conversion.typ`](conversion.typ) | ported (2026-05-15) |
+| `conversion/from_into.md` | [`conversion/from_into.typ`](conversion/from_into.typ) | ported (2026-05-15) |
+| `conversion/try_from_try_into.md` | [`conversion/try_from_try_into.typ`](conversion/try_from_try_into.typ) | ported (2026-05-15) |
+| `conversion/string.md` | [`conversion/string.typ`](conversion/string.typ) | ported (2026-05-15) |
 
 Anything not yet listed is **todo**.
 

@@ -48,3 +48,7 @@
 #include "types/literals.typ"
 #include "types/inference.typ"
 #include "types/alias.typ"
+#include "conversion.typ"
+#include "conversion/from_into.typ"
+#include "conversion/try_from_try_into.typ"
+#include "conversion/string.typ"
