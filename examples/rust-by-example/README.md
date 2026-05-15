@@ -71,6 +71,7 @@ Mirrors upstream's `SUMMARY.md` ordering. Add a new row when you port a chapter;
 | `flow_control/match/destructuring/destructure_enum.md` | [`flow_control/match/destructuring/destructure_enum.typ`](flow_control/match/destructuring/destructure_enum.typ) | ported (2026-05-15) |
 | `flow_control/match/destructuring/destructure_pointers.md` | [`flow_control/match/destructuring/destructure_pointers.typ`](flow_control/match/destructuring/destructure_pointers.typ) | ported (2026-05-15) |
 | `flow_control/match/destructuring/destructure_structures.md` | [`flow_control/match/destructuring/destructure_structures.typ`](flow_control/match/destructuring/destructure_structures.typ) | ported (2026-05-15) |
+| `flow_control/match/guard.md` | [`flow_control/match/guard.typ`](flow_control/match/guard.typ) | ported (2026-05-15) |
 | `flow_control/if_let.md` | [`flow_control/if_let.typ`](flow_control/if_let.typ) | ported (2026-05-15) |
 | `flow_control/while_let.md` | [`flow_control/while_let.typ`](flow_control/while_let.typ) | ported (2026-05-15) |
 

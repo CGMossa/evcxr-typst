@@ -67,5 +67,6 @@
 #include "flow_control/match/destructuring/destructure_enum.typ"
 #include "flow_control/match/destructuring/destructure_pointers.typ"
 #include "flow_control/match/destructuring/destructure_structures.typ"
+#include "flow_control/match/guard.typ"
 #include "flow_control/if_let.typ"
 #include "flow_control/while_let.typ"
