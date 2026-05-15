@@ -25,6 +25,12 @@ Phases 1–4 complete (T-I02 through T-I08). All public functions emit `<evcxr-s
 | `timeout:` kwarg on all eval functions | D-017 |
 | `setup(min-cli: ...)` and `<evcxr-min-cli>` marker | D-019 |
 | Labels `<id>` / `<id-out>` on code and output blocks when explicit `id:` is provided | id-as-label |
+| `render:` kwarg on `rust`/`rust-main` — now live: "source", "output", "both" | inert-kwargs |
+| `caption:` kwarg on `rust`/`rust-main` — now live: wraps in `figure(caption:)` | inert-kwargs |
+
+**Inert / limited kwargs (accepted but not fully actionable):**
+- `setup(default-render:)` — forwarded to CLI via `<evcxr-setup>` metadata, not applied at Typst render time. Use `render:` per-call instead.
+- `setup(fallback:)` — accepted for forward-compatibility; no effect. Fallback shape is hardcoded in `fallback.typ`.
 
 Don't add functions or kwargs without a decision record. Don't rename existing ones — the names are an external contract once we publish to Universe.
 

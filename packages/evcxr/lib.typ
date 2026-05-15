@@ -26,6 +26,20 @@
 // get labels (they are opaque hashes, not stable author-chosen names).
 // <id-out> is only emitted when real evaluated output is present (not on
 // fallback placeholders). rust-hidden and rust-data emit no labels.
+//
+// render: / caption: kwargs are live in rust() and rust-main():
+//   render: "source"  — code block only; output block suppressed
+//   render: "output"  — output block only; code block suppressed
+//   render: "both"    — both (default)
+//   render: auto      — treated as "both" (setup(default-render:) is not
+//                        accessible at Typst render time; see comment on setup)
+//   caption:          — wraps code + output in a Typst figure with the caption
+//
+// setup(default-render:) is forwarded to the CLI via <evcxr-setup> metadata
+// but is not interpreted at Typst render time. Use render: per-call to control
+// render mode per snippet.
+//
+// setup(fallback:) is accepted for forward-compatibility but has no effect.
 
 #import "fallback.typ"
 #import "error.typ"
@@ -149,6 +163,15 @@
   )
 }
 
+// Resolve render: kwarg to an effective mode string.
+// render: auto is treated as "both" — setup(default-render:) is forwarded
+// to the CLI via metadata but is not accessible at Typst render time.
+#let _effective-render(render) = {
+  if render == "source" { "source" }
+  else if render == "output" { "output" }
+  else { "both" }
+}
+
 #let _read-stdout(kind, id, src: none) = {
   if not _read-mode or id == none or not _index-available(id) {
     return fallback.placeholder(kind, id, src: src)
@@ -236,6 +259,18 @@
   }
 }
 
+// setup: document-level configuration.
+//
+// min-cli: "X.Y.Z" — require at least this CLI version. The CLI reads the
+//   resulting <evcxr-min-cli> marker and exits 2 if it is too old (D-019).
+//
+// default-render: "both" | "source" | "output" — forwarded to the CLI via
+//   <evcxr-setup> metadata. NOT interpreted at Typst render time (lib.typ
+//   cannot read its own metadata markers at render time). Use render: per-call
+//   to control which blocks a specific snippet renders.
+//
+// fallback: accepted for forward-compatibility; currently has no effect.
+//   The fallback rendering shape is controlled by fallback.typ, not this kwarg.
 #let setup(
   min-cli: none,
   default-render: "both",
@@ -253,7 +288,7 @@
   }
 }
 
-// rust: render a Rust snippet with its captured stdout below.
+// rust: render a Rust snippet with (optionally) its captured stdout.
 //
 // The id: kwarg is required for the CLI to locate the evaluated sidecar.
 // Omitting id: is silently OK in fallback mode (bare typst compile), but
@@ -261,33 +296,68 @@
 // When id: is explicitly provided, attaches label <id> to the code block
 // and label <id-out> to the output block (when real output is available),
 // allowing @id / @id-out cross-references from prose.
+//
+// render: controls which blocks appear:
+//   "both"   — code block + output block (default when render: is auto or "both")
+//   "source" — code block only; output suppressed
+//   "output" — output block only; code block suppressed
+// Note: setup(default-render:) is not applied here; auto is treated as "both".
+//
+// caption: wraps both visible blocks in a Typst figure with the given caption.
 #let rust(src, id: none, deps: (), render: auto, timeout: auto, caption: none) = {
   _emit-snippet("rust", src, id, deps, (
     render: render, timeout: timeout, caption: caption,
   ))
-  [#raw(_src-text(src), lang: "rust", block: true)#_code-label(id)]
-  let warn = _require-id("rust")
-  if warn != none { warn } else {
-    _read-stdout("rust", id, src: _src-text(src))
+  let eff = _effective-render(render)
+  let body = {
+    if eff == "source" or eff == "both" {
+      [#raw(_src-text(src), lang: "rust", block: true)#_code-label(id)]
+    }
+    if eff == "output" or eff == "both" {
+      let warn = _require-id("rust")
+      if warn != none { warn } else {
+        _read-stdout("rust", id, src: _src-text(src))
+      }
+    }
+  }
+  if caption != none {
+    figure(body, caption: caption)
+  } else {
+    body
   }
 }
 
 // rust-main: like rust, but the CLI appends a hidden `main();` call.
-// Same id: + label semantics as rust.
+// Same id: + label + render: + caption: semantics as rust.
 #let rust-main(src, id: none, deps: (), render: auto, timeout: auto, caption: none) = {
   _emit-snippet("rust-main", src, id, deps, (
     render: render, timeout: timeout, caption: caption,
     auto-call: "main",
   ))
-  [#raw(_src-text(src), lang: "rust", block: true)#_code-label(id)]
-  let warn = _require-id("rust-main")
-  if warn != none { warn } else {
-    _read-stdout("rust-main", id, src: _src-text(src))
+  let eff = _effective-render(render)
+  let body = {
+    if eff == "source" or eff == "both" {
+      [#raw(_src-text(src), lang: "rust", block: true)#_code-label(id)]
+    }
+    if eff == "output" or eff == "both" {
+      let warn = _require-id("rust-main")
+      if warn != none { warn } else {
+        _read-stdout("rust-main", id, src: _src-text(src))
+      }
+    }
+  }
+  if caption != none {
+    figure(body, caption: caption)
+  } else {
+    body
   }
 }
 
 // rust-out: render only the captured stdout (no code block).
 // Same id: requirement; label <id-out> attaches to the output block.
+// render: / caption: are not on this function's signature — it is always
+// output-only by design. Use rust() with render: "output" for a more
+// flexible alternative.
 #let rust-out(src, id: none, deps: (), timeout: auto) = {
   _emit-snippet("rust-out", src, id, deps, (timeout: timeout))
   let warn = _require-id("rust-out")
