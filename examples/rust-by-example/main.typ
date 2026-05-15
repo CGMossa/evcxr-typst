@@ -43,3 +43,8 @@
 #include "variable_bindings/scope.typ"
 #include "variable_bindings/declare.typ"
 #include "variable_bindings/freeze.typ"
+#include "types.typ"
+#include "types/cast.typ"
+#include "types/literals.typ"
+#include "types/inference.typ"
+#include "types/alias.typ"
