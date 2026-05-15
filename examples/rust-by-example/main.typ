@@ -31,3 +31,5 @@
 #include "primitives/literals.typ"
 #include "primitives/tuples.typ"
 #include "primitives/array.typ"
+#include "custom_types.typ"
+#include "custom_types/structs.typ"
