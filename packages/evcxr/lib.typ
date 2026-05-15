@@ -15,6 +15,10 @@
 // The manifest (written for every successfully evaluated snippet) is the gate:
 // lib.typ only calls read() on paths confirmed by the manifest, so missing
 // files never trigger a hard Typst error (D-004 invariant preserved).
+//
+// id: kwarg is required for evaluated output to render. In read-mode, snippets
+// without an explicit id: show a visible warning box instead of a placeholder.
+// In fallback mode (bare typst compile), id: none is still silently accepted.
 
 #import "fallback.typ"
 #import "error.typ"
@@ -78,6 +82,51 @@
   let exts = _manifest-exts(id)
   if not exts.contains("error") { return none }
   json(_evcxr-cache + "/" + str(id) + ".error.json")
+}
+
+// In read-mode, surface a visible warning when an output-rendering snippet
+// is missing an explicit id: kwarg. In fallback mode, return none (silent).
+//
+// The auto-id gap: the CLI computes a default ID (blake3 hash) and writes
+// sidecars under it, but Typst cannot recompute blake3, so id: none always
+// falls through to the placeholder — even after evcxr-typst run has
+// evaluated the snippet. This warning surfaces the gap at the exact call site.
+//
+// Applies to: rust, rust-main, rust-out, rust-display, rust-html.
+// Does NOT apply to: rust-hidden, rust-data (they render nothing visible).
+#let _require-id(kind) = {
+  if not _read-mode { return none }
+  block(
+    stroke: 2pt + orange,
+    fill: orange.lighten(88%),
+    inset: 0pt,
+    radius: 2pt,
+    width: 100%,
+    {
+      block(
+        fill: orange,
+        inset: (x: 8pt, y: 4pt),
+        width: 100%,
+        {
+          set text(fill: white, size: 0.85em, font: ("DejaVu Sans Mono", "monospace"))
+          [*evcxr: missing #raw("id:") kwarg* · #kind]
+        },
+      )
+      block(
+        inset: 8pt,
+        {
+          set text(size: 0.85em, font: ("DejaVu Sans Mono", "monospace"))
+          [This snippet is missing a required #raw("id:") keyword argument. \
+           Without it, evcxr-typst cannot locate the evaluated sidecar, so \
+           the output cannot be rendered even after running \
+           #raw("evcxr-typst run --allow-eval"). \
+           Add #raw("id:") to the call, for example:]
+          linebreak()
+          raw("#evcxr." + kind + "(id: \"my-id\", ```rust", lang: "typst", block: true)
+        },
+      )
+    },
+  )
 }
 
 #let _read-stdout(kind, id, src: none) = {
@@ -184,44 +233,78 @@
   }
 }
 
+// rust: render a Rust snippet with its captured stdout below.
+//
+// The id: kwarg is required for the CLI to locate the evaluated sidecar.
+// Omitting id: is silently OK in fallback mode (bare typst compile), but
+// shows a visible warning box in read-mode (after evcxr-typst run).
 #let rust(src, id: none, deps: (), render: auto, timeout: auto, caption: none) = {
   _emit-snippet("rust", src, id, deps, (
     render: render, timeout: timeout, caption: caption,
   ))
   raw(_src-text(src), lang: "rust", block: true)
-  _read-stdout("rust", id, src: _src-text(src))
+  let warn = _require-id("rust")
+  if warn != none { warn } else {
+    _read-stdout("rust", id, src: _src-text(src))
+  }
 }
 
+// rust-main: like rust, but the CLI appends a hidden `main();` call.
+//
+// The id: kwarg is required for the CLI to locate the evaluated sidecar.
 #let rust-main(src, id: none, deps: (), render: auto, timeout: auto, caption: none) = {
   _emit-snippet("rust-main", src, id, deps, (
     render: render, timeout: timeout, caption: caption,
     auto-call: "main",
   ))
   raw(_src-text(src), lang: "rust", block: true)
-  _read-stdout("rust-main", id, src: _src-text(src))
+  let warn = _require-id("rust-main")
+  if warn != none { warn } else {
+    _read-stdout("rust-main", id, src: _src-text(src))
+  }
 }
 
+// rust-out: render only the captured stdout (no code block).
+//
+// The id: kwarg is required for the CLI to locate the evaluated sidecar.
 #let rust-out(src, id: none, deps: (), timeout: auto) = {
   _emit-snippet("rust-out", src, id, deps, (timeout: timeout))
-  _read-stdout("rust-out", id, src: _src-text(src))
+  let warn = _require-id("rust-out")
+  if warn != none { warn } else {
+    _read-stdout("rust-out", id, src: _src-text(src))
+  }
 }
 
+// rust-display: render the snippet's display output (image, SVG, or HTML).
+//
+// The id: kwarg is required for the CLI to locate the evaluated sidecar.
 #let rust-display(src, id: none, deps: (), prefer: auto, timeout: auto) = {
   _emit-snippet("rust-display", src, id, deps, (
     prefer: prefer, timeout: timeout,
   ))
-  _read-display(id, prefer: prefer, src: _src-text(src))
+  let warn = _require-id("rust-display")
+  if warn != none { warn } else {
+    _read-display(id, prefer: prefer, src: _src-text(src))
+  }
 }
 
 // rust-html renders the snippet's HTML output verbatim as a raw block.
 // HTML frame rendering (typst html.frame) is intentionally deferred per T-I04.
+//
+// The id: kwarg is required for the CLI to locate the evaluated sidecar.
 #let rust-html(src, id: none, deps: (), timeout: auto) = {
   _emit-snippet("rust-display", src, id, deps, (
     prefer: "text/html", timeout: timeout,
   ))
-  _read-html(id, src: _src-text(src))
+  let warn = _require-id("rust-html")
+  if warn != none { warn } else {
+    _read-html(id, src: _src-text(src))
+  }
 }
 
+// rust-hidden: evaluate without rendering anything.
+// id: is optional — the CLI computes a default ID even without an explicit one.
+// No warning is emitted since there is no visible output to locate.
 #let rust-hidden(src, id: none, deps: (), timeout: auto) = {
   _emit-snippet("rust-hidden", src, id, deps, (timeout: timeout))
   // renders nothing on purpose
@@ -235,6 +318,10 @@
 // place metadata content in the document AND return a non-content dict value):
 //   #evcxr.rust-data(id: "x", ```rust...```)        // emits marker, no visual
 //   #let v = evcxr.rust-data-read(id: "x")          // returns dict / array
+//
+// id: is effectively required to use rust-data-read — rust-data-read(id: none)
+// always returns the fallback: value. No warning box here since rust-data
+// renders nothing itself; the symptom surfaces at rust-data-read's call site.
 #let rust-data(
   src, id: none, deps: (), format: auto, timeout: auto,
 ) = {
