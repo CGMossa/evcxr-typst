@@ -57,6 +57,10 @@ Mirrors upstream's `SUMMARY.md` ordering. Add a new row when you port a chapter;
 | `conversion/try_from_try_into.md` | [`conversion/try_from_try_into.typ`](conversion/try_from_try_into.typ) | ported (2026-05-15) |
 | `conversion/string.md` | [`conversion/string.typ`](conversion/string.typ) | ported (2026-05-15) |
 | `expression.md` | [`expression.typ`](expression.typ) | ported (2026-05-15) |
+| `flow_control.md` | [`flow_control.typ`](flow_control.typ) | ported (2026-05-15) |
+| `flow_control/if_else.md` | [`flow_control/if_else.typ`](flow_control/if_else.typ) | ported (2026-05-15) |
+| `flow_control/while.md` | [`flow_control/while.typ`](flow_control/while.typ) | ported (2026-05-15) |
+| `flow_control/loop.md` | [`flow_control/loop.typ`](flow_control/loop.typ) | ported (2026-05-15) |
 
 Anything not yet listed is **todo**.
 
