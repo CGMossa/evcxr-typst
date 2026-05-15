@@ -42,6 +42,7 @@ Mirrors upstream's `SUMMARY.md` ordering. Add a new row when you port a chapter;
 | `custom_types/enum/c_like.md` | [`custom_types/enum/c_like.typ`](custom_types/enum/c_like.typ) | ported (2026-05-15) |
 | `custom_types/enum/testcase_linked_list.md` | [`custom_types/enum/testcase_linked_list.typ`](custom_types/enum/testcase_linked_list.typ) | ported (2026-05-15) |
 | `custom_types/constants.md` | [`custom_types/constants.typ`](custom_types/constants.typ) | ported source-only (2026-05-15) |
+| `variable_bindings.md` | [`variable_bindings.typ`](variable_bindings.typ) | ported (2026-05-15) |
 
 Anything not yet listed is **todo**.
 

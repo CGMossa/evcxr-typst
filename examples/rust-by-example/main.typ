@@ -38,3 +38,4 @@
 #include "custom_types/enum/c_like.typ"
 #include "custom_types/enum/testcase_linked_list.typ"
 #include "custom_types/constants.typ"
+#include "variable_bindings.typ"
