@@ -62,6 +62,7 @@ Mirrors upstream's `SUMMARY.md` ordering. Add a new row when you port a chapter;
 | `flow_control/while.md` | [`flow_control/while.typ`](flow_control/while.typ) | ported (2026-05-15) |
 | `flow_control/loop.md` | [`flow_control/loop.typ`](flow_control/loop.typ) | ported (2026-05-15) |
 | `flow_control/loop/nested.md` | [`flow_control/loop/nested.typ`](flow_control/loop/nested.typ) | ported (2026-05-15) |
+| `flow_control/loop/return.md` | [`flow_control/loop/return.typ`](flow_control/loop/return.typ) | ported (2026-05-15) |
 | `flow_control/for.md` | [`flow_control/for.typ`](flow_control/for.typ) | ported (2026-05-15) |
 | `flow_control/if_let.md` | [`flow_control/if_let.typ`](flow_control/if_let.typ) | ported (2026-05-15) |
 | `flow_control/while_let.md` | [`flow_control/while_let.typ`](flow_control/while_let.typ) | ported (2026-05-15) |
