@@ -86,6 +86,12 @@
   }
   let err = _check-error(id)
   if err != none { return error.evcxr-error-box(err) }
+  // A snippet that evaluates successfully but prints nothing has no .txt sidecar
+  // (eval.rs::write_mime_sidecars only writes it when plain_stdout is non-empty).
+  // Gate the read on the manifest so we never hit a missing-file hard error
+  // (D-004 invariant), matching the rust-display / rust-html / rust-data path.
+  let exts = _manifest-exts(id)
+  if not exts.contains("txt") { return [] }
   let bytes = read(_evcxr-cache + "/" + str(id) + ".txt")
   raw(str(bytes), block: true)
 }
