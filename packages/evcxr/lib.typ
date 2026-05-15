@@ -15,6 +15,13 @@
 // The manifest (written for every successfully evaluated snippet) is the gate:
 // lib.typ only calls read() on paths confirmed by the manifest, so missing
 // files never trigger a hard Typst error (D-004 invariant preserved).
+//
+// Labels (id-as-label):
+// When an explicit id: is provided, the rendered code block gets label <id>
+// and the rendered output block gets label <id-out>. Auto-derived IDs do not
+// get labels (they are opaque hashes, not stable author-chosen names).
+// <id-out> is only emitted when real evaluated output is present (not on
+// fallback placeholders). rust-hidden and rust-data emit no labels.
 
 #import "fallback.typ"
 #import "error.typ"
@@ -80,6 +87,19 @@
   json(_evcxr-cache + "/" + str(id) + ".error.json")
 }
 
+// Attach label <id> to content when id was explicitly provided.
+// Used after rendered code blocks.
+#let _code-label(id) = {
+  if id != none { label(str(id)) }
+}
+
+// Attach label <id-out> to content when id was explicitly provided AND real
+// evaluated output is available (not a fallback placeholder).
+// Only call this when _index-available(id) is true.
+#let _out-label(id) = {
+  if id != none { label(str(id) + "-out") }
+}
+
 #let _read-stdout(kind, id, src: none) = {
   if not _read-mode or id == none or not _index-available(id) {
     return fallback.placeholder(kind, id, src: src)
@@ -93,7 +113,7 @@
   let exts = _manifest-exts(id)
   if not exts.contains("txt") { return [] }
   let bytes = read(_evcxr-cache + "/" + str(id) + ".txt")
-  raw(str(bytes), block: true)
+  [#raw(str(bytes), block: true)#_out-label(id)]
 }
 
 #let _read-display(id, prefer: none, src: none) = {
@@ -131,7 +151,7 @@
   if result == none {
     fallback.placeholder("rust-display", id, src: src)
   } else {
-    result
+    [#result#_out-label(id)]
   }
 }
 
@@ -145,7 +165,7 @@
   if not exts.contains("html") {
     return fallback.placeholder("rust-html", id, src: src)
   }
-  raw(str(read(_evcxr-cache + "/" + str(id) + ".html")), lang: "html")
+  [#raw(str(read(_evcxr-cache + "/" + str(id) + ".html")), lang: "html")#_out-label(id)]
 }
 
 #let _read-data(id, format: auto) = {
@@ -184,28 +204,41 @@
   }
 }
 
+// rust: render a Rust snippet with its captured stdout below.
+// When id: is explicitly provided, attaches label <id> to the code block
+// and label <id-out> to the output block (when real output is available).
+// Labels allow @id / @id-out cross-references from prose.
+// Auto-derived IDs (when id: is omitted) do not receive labels.
 #let rust(src, id: none, deps: (), render: auto, timeout: auto, caption: none) = {
   _emit-snippet("rust", src, id, deps, (
     render: render, timeout: timeout, caption: caption,
   ))
-  raw(_src-text(src), lang: "rust", block: true)
+  [#raw(_src-text(src), lang: "rust", block: true)#_code-label(id)]
   _read-stdout("rust", id, src: _src-text(src))
 }
 
+// rust-main: like rust, but the CLI appends a hidden `main();` call.
+// When id: is explicitly provided, attaches label <id> to the code block
+// and label <id-out> to the output block (when real output is available).
 #let rust-main(src, id: none, deps: (), render: auto, timeout: auto, caption: none) = {
   _emit-snippet("rust-main", src, id, deps, (
     render: render, timeout: timeout, caption: caption,
     auto-call: "main",
   ))
-  raw(_src-text(src), lang: "rust", block: true)
+  [#raw(_src-text(src), lang: "rust", block: true)#_code-label(id)]
   _read-stdout("rust-main", id, src: _src-text(src))
 }
 
+// rust-out: render only the captured stdout (no code block).
+// When id: is explicitly provided, attaches label <id-out> to the output.
+// No <id> label since there is no code block to attach to.
 #let rust-out(src, id: none, deps: (), timeout: auto) = {
   _emit-snippet("rust-out", src, id, deps, (timeout: timeout))
   _read-stdout("rust-out", id, src: _src-text(src))
 }
 
+// rust-display: render the snippet's display output (image, SVG, or HTML).
+// When id: is explicitly provided, attaches label <id-out> to the output.
 #let rust-display(src, id: none, deps: (), prefer: auto, timeout: auto) = {
   _emit-snippet("rust-display", src, id, deps, (
     prefer: prefer, timeout: timeout,
@@ -215,6 +248,7 @@
 
 // rust-html renders the snippet's HTML output verbatim as a raw block.
 // HTML frame rendering (typst html.frame) is intentionally deferred per T-I04.
+// When id: is explicitly provided, attaches label <id-out> to the output.
 #let rust-html(src, id: none, deps: (), timeout: auto) = {
   _emit-snippet("rust-display", src, id, deps, (
     prefer: "text/html", timeout: timeout,
@@ -222,6 +256,8 @@
   _read-html(id, src: _src-text(src))
 }
 
+// rust-hidden: evaluate without rendering anything.
+// No labels are emitted — there is no visible content to reference.
 #let rust-hidden(src, id: none, deps: (), timeout: auto) = {
   _emit-snippet("rust-hidden", src, id, deps, (timeout: timeout))
   // renders nothing on purpose
@@ -235,6 +271,8 @@
 // place metadata content in the document AND return a non-content dict value):
 //   #evcxr.rust-data(id: "x", ```rust...```)        // emits marker, no visual
 //   #let v = evcxr.rust-data-read(id: "x")          // returns dict / array
+//
+// No labels are emitted — rust-data has no visible output block to label.
 #let rust-data(
   src, id: none, deps: (), format: auto, timeout: auto,
 ) = {
