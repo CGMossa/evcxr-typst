@@ -47,6 +47,11 @@ Mirrors upstream's `SUMMARY.md` ordering. Add a new row when you port a chapter;
 | `variable_bindings/scope.md` | [`variable_bindings/scope.typ`](variable_bindings/scope.typ) | ported (2026-05-15) |
 | `variable_bindings/declare.md` | [`variable_bindings/declare.typ`](variable_bindings/declare.typ) | ported source-only (2026-05-15) |
 | `variable_bindings/freeze.md` | [`variable_bindings/freeze.typ`](variable_bindings/freeze.typ) | ported source-only (2026-05-15) |
+| `types.md` | [`types.typ`](types.typ) | ported (2026-05-15) |
+| `types/cast.md` | [`types/cast.typ`](types/cast.typ) | ported source-only (2026-05-15) |
+| `types/literals.md` | [`types/literals.typ`](types/literals.typ) | ported (2026-05-15) |
+| `types/inference.md` | [`types/inference.typ`](types/inference.typ) | ported (2026-05-15) |
+| `types/alias.md` | [`types/alias.typ`](types/alias.typ) | ported (2026-05-15) |
 
 Anything not yet listed is **todo**.
 
