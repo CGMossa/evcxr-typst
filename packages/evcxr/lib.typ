@@ -19,6 +19,13 @@
 // id: kwarg is required for evaluated output to render. In read-mode, snippets
 // without an explicit id: show a visible warning box instead of a placeholder.
 // In fallback mode (bare typst compile), id: none is still silently accepted.
+//
+// Labels (id-as-label):
+// When an explicit id: is provided, the rendered code block gets label <id>
+// and the rendered output block gets label <id-out>. Auto-derived IDs do not
+// get labels (they are opaque hashes, not stable author-chosen names).
+// <id-out> is only emitted when real evaluated output is present (not on
+// fallback placeholders). rust-hidden and rust-data emit no labels.
 
 #import "fallback.typ"
 #import "error.typ"
@@ -84,6 +91,19 @@
   json(_evcxr-cache + "/" + str(id) + ".error.json")
 }
 
+// Attach label <id> to content when id was explicitly provided.
+// Used after rendered code blocks.
+#let _code-label(id) = {
+  if id != none { label(str(id)) }
+}
+
+// Attach label <id-out> to content when id was explicitly provided AND real
+// evaluated output is available (not a fallback placeholder).
+// Only call this when _index-available(id) is true.
+#let _out-label(id) = {
+  if id != none { label(str(id) + "-out") }
+}
+
 // In read-mode, surface a visible warning when an output-rendering snippet
 // is missing an explicit id: kwarg. In fallback mode, return none (silent).
 //
@@ -142,7 +162,7 @@
   let exts = _manifest-exts(id)
   if not exts.contains("txt") { return [] }
   let bytes = read(_evcxr-cache + "/" + str(id) + ".txt")
-  raw(str(bytes), block: true)
+  [#raw(str(bytes), block: true)#_out-label(id)]
 }
 
 #let _read-display(id, prefer: none, src: none) = {
@@ -180,7 +200,7 @@
   if result == none {
     fallback.placeholder("rust-display", id, src: src)
   } else {
-    result
+    [#result#_out-label(id)]
   }
 }
 
@@ -194,7 +214,7 @@
   if not exts.contains("html") {
     return fallback.placeholder("rust-html", id, src: src)
   }
-  raw(str(read(_evcxr-cache + "/" + str(id) + ".html")), lang: "html")
+  [#raw(str(read(_evcxr-cache + "/" + str(id) + ".html")), lang: "html")#_out-label(id)]
 }
 
 #let _read-data(id, format: auto) = {
@@ -238,11 +258,14 @@
 // The id: kwarg is required for the CLI to locate the evaluated sidecar.
 // Omitting id: is silently OK in fallback mode (bare typst compile), but
 // shows a visible warning box in read-mode (after evcxr-typst run).
+// When id: is explicitly provided, attaches label <id> to the code block
+// and label <id-out> to the output block (when real output is available),
+// allowing @id / @id-out cross-references from prose.
 #let rust(src, id: none, deps: (), render: auto, timeout: auto, caption: none) = {
   _emit-snippet("rust", src, id, deps, (
     render: render, timeout: timeout, caption: caption,
   ))
-  raw(_src-text(src), lang: "rust", block: true)
+  [#raw(_src-text(src), lang: "rust", block: true)#_code-label(id)]
   let warn = _require-id("rust")
   if warn != none { warn } else {
     _read-stdout("rust", id, src: _src-text(src))
@@ -250,14 +273,13 @@
 }
 
 // rust-main: like rust, but the CLI appends a hidden `main();` call.
-//
-// The id: kwarg is required for the CLI to locate the evaluated sidecar.
+// Same id: + label semantics as rust.
 #let rust-main(src, id: none, deps: (), render: auto, timeout: auto, caption: none) = {
   _emit-snippet("rust-main", src, id, deps, (
     render: render, timeout: timeout, caption: caption,
     auto-call: "main",
   ))
-  raw(_src-text(src), lang: "rust", block: true)
+  [#raw(_src-text(src), lang: "rust", block: true)#_code-label(id)]
   let warn = _require-id("rust-main")
   if warn != none { warn } else {
     _read-stdout("rust-main", id, src: _src-text(src))
@@ -265,8 +287,7 @@
 }
 
 // rust-out: render only the captured stdout (no code block).
-//
-// The id: kwarg is required for the CLI to locate the evaluated sidecar.
+// Same id: requirement; label <id-out> attaches to the output block.
 #let rust-out(src, id: none, deps: (), timeout: auto) = {
   _emit-snippet("rust-out", src, id, deps, (timeout: timeout))
   let warn = _require-id("rust-out")
@@ -276,8 +297,7 @@
 }
 
 // rust-display: render the snippet's display output (image, SVG, or HTML).
-//
-// The id: kwarg is required for the CLI to locate the evaluated sidecar.
+// Same id: requirement; label <id-out> attaches to the output block.
 #let rust-display(src, id: none, deps: (), prefer: auto, timeout: auto) = {
   _emit-snippet("rust-display", src, id, deps, (
     prefer: prefer, timeout: timeout,
@@ -290,8 +310,7 @@
 
 // rust-html renders the snippet's HTML output verbatim as a raw block.
 // HTML frame rendering (typst html.frame) is intentionally deferred per T-I04.
-//
-// The id: kwarg is required for the CLI to locate the evaluated sidecar.
+// Same id: requirement; label <id-out> attaches to the output block.
 #let rust-html(src, id: none, deps: (), timeout: auto) = {
   _emit-snippet("rust-display", src, id, deps, (
     prefer: "text/html", timeout: timeout,
@@ -304,7 +323,8 @@
 
 // rust-hidden: evaluate without rendering anything.
 // id: is optional — the CLI computes a default ID even without an explicit one.
-// No warning is emitted since there is no visible output to locate.
+// No warning is emitted (no visible output to locate) and no labels are emitted
+// (no visible content to reference).
 #let rust-hidden(src, id: none, deps: (), timeout: auto) = {
   _emit-snippet("rust-hidden", src, id, deps, (timeout: timeout))
   // renders nothing on purpose
@@ -322,6 +342,7 @@
 // id: is effectively required to use rust-data-read — rust-data-read(id: none)
 // always returns the fallback: value. No warning box here since rust-data
 // renders nothing itself; the symptom surfaces at rust-data-read's call site.
+// No labels are emitted — rust-data has no visible output block to label.
 #let rust-data(
   src, id: none, deps: (), format: auto, timeout: auto,
 ) = {

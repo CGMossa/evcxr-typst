@@ -37,18 +37,9 @@
       "problemMatcher": [
         {
           "owner": "evcxr-typst-watch",
-          "fileLocation": [
-            "relative",
-            "${workspaceFolder}"
-          ],
-          "pattern": [
-            {
-              "regexp": "^.*$",
-              "file": 1,
-              "line": 1,
-              "message": 1
-            }
-          ],
+          "pattern": {
+            "regexp": "^$"
+          },
           "background": {
             "activeOnStart": true,
             "beginsPattern": "^watch running; press Ctrl-C to stop\\.$",
@@ -89,18 +80,9 @@
       "problemMatcher": [
         {
           "owner": "evcxr-typst-watch",
-          "fileLocation": [
-            "relative",
-            "${workspaceFolder}"
-          ],
-          "pattern": [
-            {
-              "regexp": "^.*$",
-              "file": 1,
-              "line": 1,
-              "message": 1
-            }
-          ],
+          "pattern": {
+            "regexp": "^$"
+          },
           "background": {
             "activeOnStart": true,
             "beginsPattern": "^watch running; press Ctrl-C to stop\\.$",
@@ -122,7 +104,7 @@
       }
     },
     {
-      "label": "evcxr-typst: run (one-shot, rust-by-example)",
+      "label": "evcxr-typst: build + evaluate (rust-by-example)",
       "type": "shell",
       "command": "./target/debug/evcxr-typst",
       "args": [
@@ -132,6 +114,11 @@
         ".",
         "examples/rust-by-example/main.typ"
       ],
+      "options": {
+        "env": {
+          "EVCXR_TYPST_LOG": "evcxr_typst=info"
+        }
+      },
       "presentation": {
         "reveal": "always",
         "panel": "shared",
@@ -140,7 +127,30 @@
       "dependsOn": [
         "evcxr-typst: build"
       ],
-      "detail": "One-shot evaluate + render. Useful for seeding sidecars before starting watch (works around #30)."
+      "detail": "Build the CLI (via dependsOn) then evaluate every Rust snippet in examples/rust-by-example/main.typ and render the PDF + SVG. One-shot; also seeds sidecars before starting watch (works around #30)."
+    },
+    {
+      "label": "evcxr-typst: test (workspace)",
+      "type": "shell",
+      "command": "cargo",
+      "args": [
+        "test",
+        "--workspace",
+        "--",
+        "--test-threads",
+        "1"
+      ],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": "$rustc",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "detail": "Run the workspace test suite. --test-threads 1 is mandatory (CommandContext is process-global; parallel tests collide)."
     },
     {
       "label": "evcxr-typst: clean (current example dir)",
