@@ -37,6 +37,7 @@ Mirrors upstream's `SUMMARY.md` ordering. Add a new row when you port a chapter;
 | `primitives/array.md` | [`primitives/array.typ`](primitives/array.typ) | ported (2026-05-15) |
 | `custom_types.md` | [`custom_types.typ`](custom_types.typ) | ported (2026-05-15) |
 | `custom_types/structs.md` | [`custom_types/structs.typ`](custom_types/structs.typ) | ported (2026-05-15) |
+| `custom_types/enum.md` | [`custom_types/enum.typ`](custom_types/enum.typ) | ported (2026-05-15) |
 
 Anything not yet listed is **todo**.
 

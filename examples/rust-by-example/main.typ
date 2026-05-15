@@ -33,3 +33,4 @@
 #include "primitives/array.typ"
 #include "custom_types.typ"
 #include "custom_types/structs.typ"
+#include "custom_types/enum.typ"
