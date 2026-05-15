@@ -40,6 +40,7 @@ Mirrors upstream's `SUMMARY.md` ordering. Add a new row when you port a chapter;
 | `custom_types/enum.md` | [`custom_types/enum.typ`](custom_types/enum.typ) | ported (2026-05-15) |
 | `custom_types/enum/enum_use.md` | [`custom_types/enum/enum_use.typ`](custom_types/enum/enum_use.typ) | ported (2026-05-15) |
 | `custom_types/enum/c_like.md` | [`custom_types/enum/c_like.typ`](custom_types/enum/c_like.typ) | ported (2026-05-15) |
+| `custom_types/enum/testcase_linked_list.md` | [`custom_types/enum/testcase_linked_list.typ`](custom_types/enum/testcase_linked_list.typ) | ported (2026-05-15) |
 
 Anything not yet listed is **todo**.
 
