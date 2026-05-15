@@ -29,3 +29,4 @@
 #include "hello/print/fmt.typ"
 #include "primitives.typ"
 #include "primitives/literals.typ"
+#include "primitives/tuples.typ"

@@ -33,6 +33,7 @@ Mirrors upstream's `SUMMARY.md` ordering. Add a new row when you port a chapter;
 | `hello/print/fmt.md` | [`hello/print/fmt.typ`](hello/print/fmt.typ) | ported (2026-05-15) |
 | `primitives.md` | [`primitives.typ`](primitives.typ) | ported source-only (2026-05-15) |
 | `primitives/literals.md` | [`primitives/literals.typ`](primitives/literals.typ) | ported (2026-05-15) |
+| `primitives/tuples.md` | [`primitives/tuples.typ`](primitives/tuples.typ) | ported (2026-05-15) |
 
 Anything not yet listed is **todo**.
 
