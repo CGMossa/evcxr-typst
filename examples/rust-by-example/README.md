@@ -67,6 +67,7 @@ Mirrors upstream's `SUMMARY.md` ordering. Add a new row when you port a chapter;
 | `flow_control/match.md` | [`flow_control/match.typ`](flow_control/match.typ) | ported (2026-05-15) |
 | `flow_control/match/destructuring.md` | [`flow_control/match/destructuring.typ`](flow_control/match/destructuring.typ) | ported (2026-05-15) |
 | `flow_control/match/destructuring/destructure_tuple.md` | [`flow_control/match/destructuring/destructure_tuple.typ`](flow_control/match/destructuring/destructure_tuple.typ) | ported (2026-05-15) |
+| `flow_control/match/destructuring/destructure_slice.md` | [`flow_control/match/destructuring/destructure_slice.typ`](flow_control/match/destructuring/destructure_slice.typ) | ported (2026-05-15) |
 | `flow_control/if_let.md` | [`flow_control/if_let.typ`](flow_control/if_let.typ) | ported (2026-05-15) |
 | `flow_control/while_let.md` | [`flow_control/while_let.typ`](flow_control/while_let.typ) | ported (2026-05-15) |
 
