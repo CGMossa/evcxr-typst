@@ -41,6 +41,16 @@ Pick one convention per chapter, document the choice in the journal entry, and s
 
 Use `rust-main(...)` especially when the upstream `fn main()` body declares `let` bindings or items (`struct` / `enum` / `fn`) that should not leak across chapters. Inlining them as top-level evcxr statements would commit the bindings / items to subsequent chapters' scope. Keeping them inside `fn main() { ... }` keeps them function-local. See `journal/2026-05-10-001-print.md` for the original worked example (bindings `number`, `width` plus a local `struct Structure(i32)`).
 
+### When to render a block as source-only (no eval)
+
+Drop the evcxr call and render the code as a plain `#raw(..., lang: "rust", block: true)` fence when **any** of these holds:
+
+1. **The chapter is teaching a compile error.** Upstream typically tags these `ignore,mdbook-runnable`; the snippet contains a deliberate error (`THRESHOLD = 5;` after a `const`, `mutable = true;` on a typed variable, use of an uninitialized binding, a frozen-write, etc.). Evaluating replaces the chapter's "look, this is wrong" with an error-box from `error.typ`, which defeats the pedagogy. Examples: `primitives.md`, `custom_types/constants.md`, `variable_bindings/{mut,scope,declare,freeze}.md`'s error-demoing snippets.
+2. **The block is explanatory definitions only**, and evaluating it would pollute or redefine items the persistent evcxr context already holds from earlier chapters. Examples: the first blocks of `hello/print/print_debug.typ` and `print_display.typ` (commit `1ba0906` shipped this convention; `Structure` redefinition would break the prior chapter's `Deep(Structure)`).
+3. **The block has no `fn main` and only defines items** that are functionally identical to a prior snippet's definitions. Evaluating only buys an extra type-redefinition; rendering source preserves the reading flow. Example: `custom_types/enum.md`'s third snippet (impl block with `Self` alias).
+
+When upstream tags `ignore,mdbook-runnable` but the snippet *runs cleanly* (defensive `ignore` for commented-out panic lines below the body), use `rust-main(...)` as normal. Example: `primitives/array.md` (the `xs.get(i)` body is safe; the OOB `xs[5]` is commented out).
+
 ## When you finish a chapter
 
 1. Verify `typst compile --root . main.typ` succeeds (fallback path).
