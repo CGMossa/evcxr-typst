@@ -57,6 +57,7 @@
 #include "flow_control/if_else.typ"
 #include "flow_control/while.typ"
 #include "flow_control/loop.typ"
+#include "flow_control/loop/nested.typ"
 #include "flow_control/for.typ"
 #include "flow_control/if_let.typ"
 #include "flow_control/while_let.typ"
