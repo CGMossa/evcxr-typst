@@ -53,3 +53,7 @@
 #include "conversion/try_from_try_into.typ"
 #include "conversion/string.typ"
 #include "expression.typ"
+#include "flow_control.typ"
+#include "flow_control/if_else.typ"
+#include "flow_control/while.typ"
+#include "flow_control/loop.typ"
