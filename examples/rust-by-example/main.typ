@@ -58,3 +58,4 @@
 #include "flow_control/while.typ"
 #include "flow_control/loop.typ"
 #include "flow_control/for.typ"
+#include "flow_control/if_let.typ"
