@@ -60,5 +60,6 @@
 #include "flow_control/loop/nested.typ"
 #include "flow_control/loop/return.typ"
 #include "flow_control/for.typ"
+#include "flow_control/match.typ"
 #include "flow_control/if_let.typ"
 #include "flow_control/while_let.typ"
